@@ -24,13 +24,20 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: '#FF6B35',
         tabBarInactiveTintColor: '#999',
+        tabBarLabelStyle: {
+          fontSize: 13,
+          fontWeight: '600',
+        },
+        tabBarItemStyle: {
+          paddingVertical: 6,
+        },
         tabBarStyle: {
           backgroundColor: '#FFF',
           borderTopWidth: 1,
           borderTopColor: '#E0E0E0',
-          paddingTop: 8,
-          paddingBottom: 8,
-          height: 60,
+          paddingTop: 10,
+          paddingBottom: 12,
+          height: 72,
         },
       }}>
       <Tabs.Screen

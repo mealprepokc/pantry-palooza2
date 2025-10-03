@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { GeneratedDish } from '@/types/database';
 import { BookmarkPlus, BookmarkCheck, Clock } from 'lucide-react-native';
@@ -15,6 +15,77 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle }: DishScore
   const { user } = useAuth();
   const [saved, setSaved] = useState(isSaved);
   const [saving, setSaving] = useState(false);
+
+  // Very lightweight calorie estimator. This is intentionally simple and conservative.
+  const caloriesEstimate = useMemo(() => {
+    const baseMap: Record<string, number> = {
+      // proteins (per serving rough averages)
+      'Chicken Breast': 220,
+      'Chicken Thighs': 260,
+      'Ground Beef': 300,
+      'Ground Turkey': 240,
+      'Pork Chops': 290,
+      'Steak': 350,
+      'Lamb': 360,
+      'Salmon': 330,
+      'Shrimp': 170,
+      'Tilapia': 180,
+      'Tuna': 200,
+      'Tofu': 180,
+      'Eggs': 150,
+      'Bacon': 200,
+      'Sausage': 320,
+
+      // carbs / grains (per serving)
+      'Rice': 200,
+      'Pasta': 220,
+      'Potatoes': 160,
+      'Bread': 150,
+
+      // fats / extras
+      'Olive Oil': 120,
+      'Butter': 100,
+      'Cheese': 110,
+    };
+
+    // Tally known ingredients and lightly account for unknowns
+    let total = 0;
+    let unknowns = 0;
+    for (const ing of dish.ingredients) {
+      // try exact match first
+      if (baseMap[ing]) {
+        total += baseMap[ing];
+        continue;
+      }
+      // fuzzy contains for common buckets
+      const key = ing.toLowerCase();
+      if (key.includes('chicken')) total += baseMap['Chicken Breast'];
+      else if (key.includes('beef')) total += baseMap['Ground Beef'];
+      else if (key.includes('turkey')) total += baseMap['Ground Turkey'];
+      else if (key.includes('pork')) total += baseMap['Pork Chops'];
+      else if (key.includes('salmon')) total += baseMap['Salmon'];
+      else if (key.includes('shrimp')) total += baseMap['Shrimp'];
+      else if (key.includes('tofu')) total += baseMap['Tofu'];
+      else if (key.includes('egg')) total += baseMap['Eggs'];
+      else if (key.includes('sausage')) total += baseMap['Sausage'];
+      else if (key.includes('bacon')) total += baseMap['Bacon'];
+      else if (key.includes('pasta') || key.includes('spaghetti') || key.includes('penne') || key.includes('noodle')) total += baseMap['Pasta'];
+      else if (key.includes('rice')) total += baseMap['Rice'];
+      else if (key.includes('potato')) total += baseMap['Potatoes'];
+      else if (key.includes('cheese')) total += baseMap['Cheese'];
+      else if (key.includes('olive oil') || key.includes('oil')) total += baseMap['Olive Oil'];
+      else if (key.includes('butter')) total += baseMap['Butter'];
+      else if (key.includes('bread')) total += baseMap['Bread'];
+      else unknowns += 1;
+    }
+
+    // Add a small buffer for unknowns
+    total += unknowns * 20; // 20 kcal per unknown ingredient as a mild estimate
+
+    // Clamp to reasonable range for a single-serving dish
+    total = Math.max(150, Math.min(total, 900));
+    return Math.round(total / 10) * 10; // round to nearest 10
+  }, [dish.ingredients]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -71,6 +142,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle }: DishScore
                 <Clock size={14} color="#5A6C7D" />
                 <Text style={styles.time}>{dish.cooking_time}</Text>
               </View>
+              <Text style={styles.calories}>~{caloriesEstimate} kcal</Text>
             </View>
           </View>
           <TouchableOpacity
@@ -144,6 +216,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
+  },
+  calories: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: '#5A6C7D',
+    fontWeight: '600',
   },
   cuisine: {
     fontSize: 14,

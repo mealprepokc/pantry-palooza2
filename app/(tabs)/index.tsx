@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,8 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [generatedDishes, setGeneratedDishes] = useState<GeneratedDish[]>([]);
   const [error, setError] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
+  const [dishesOffsetY, setDishesOffsetY] = useState<number | null>(null);
 
   useEffect(() => {
     loadUserSelections();
@@ -122,6 +124,12 @@ export default function HomeScreen() {
       }
 
       setGeneratedDishes(data.dishes);
+      // After dishes are set, scroll to the results section when layout info is known
+      setTimeout(() => {
+        if (scrollRef.current && dishesOffsetY != null) {
+          scrollRef.current.scrollTo({ y: dishesOffsetY - 12, animated: true });
+        }
+      }, 50);
     } catch (err) {
       setError('Failed to generate dishes. Please try again.');
       console.error(err);
@@ -131,6 +139,8 @@ export default function HomeScreen() {
   };
 
   const hasSelections = seasonings.length > 0 || vegetables.length > 0 || entrees.length > 0 || pastas.length > 0;
+  const totalSelected = seasonings.length + vegetables.length + entrees.length + pastas.length;
+  const remainingGlobal = Math.max(0, 30 - totalSelected);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -144,12 +154,13 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <ScrollView ref={scrollRef} style={styles.scrollView} contentContainerStyle={styles.content}>
         <DropdownSelector
           title="Seasonings"
           items={SEASONINGS}
           selectedItems={seasonings}
           onToggle={(item) => toggleItem(seasonings, setSeasonings, item)}
+          maxSelections={seasonings.length + remainingGlobal}
         />
 
         <DropdownSelector
@@ -157,13 +168,15 @@ export default function HomeScreen() {
           items={VEGETABLES}
           selectedItems={vegetables}
           onToggle={(item) => toggleItem(vegetables, setVegetables, item)}
+          maxSelections={vegetables.length + remainingGlobal}
         />
 
         <DropdownSelector
-          title="Entrees"
+          title="Proteins"
           items={ENTREES}
           selectedItems={entrees}
           onToggle={(item) => toggleItem(entrees, setEntrees, item)}
+          maxSelections={entrees.length + remainingGlobal}
         />
 
         <DropdownSelector
@@ -171,6 +184,7 @@ export default function HomeScreen() {
           items={PASTAS}
           selectedItems={pastas}
           onToggle={(item) => toggleItem(pastas, setPastas, item)}
+          maxSelections={pastas.length + remainingGlobal}
         />
 
         <DropdownSelector
@@ -181,6 +195,11 @@ export default function HomeScreen() {
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {remainingGlobal === 0 && (
+          <Text style={styles.helper}>
+            You\'ve reached the 30 item limit. Remove some selections to add more.
+          </Text>
+        )}
 
         <TouchableOpacity
           style={[styles.generateButton, (!hasSelections || !equipment.length) && styles.generateButtonDisabled]}
@@ -195,7 +214,10 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         {generatedDishes.length > 0 && (
-          <View style={styles.dishesContainer}>
+          <View
+            style={styles.dishesContainer}
+            onLayout={(e) => setDishesOffsetY(e.nativeEvent.layout.y)}
+          >
             <Text style={styles.dishesTitle}>Your Personalized Dishes</Text>
             {generatedDishes.map((dish, index) => (
               <DishScorecard key={index} dish={dish} />
@@ -264,6 +286,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  helper: {
+    color: '#5A6C7D',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 8,
   },
   error: {
     color: '#E53E3E',
