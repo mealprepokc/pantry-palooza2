@@ -25,13 +25,13 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Impact: Medium
   - Effort: Easy
   - Status: todo
-  - Notes: Start as a UI field if data is present; otherwise add placeholder/estimation TBD.
+  - Notes: Use a fair estimate if exact value missing; label clearly (e.g., "~320 kcal").
 
 - [ ] Clarify max number of items allowed before generating dishes
   - Impact: Medium
   - Effort: Easy
   - Status: todo
-  - Notes: Decide cap (e.g., 25–50). Show helper text if the user exceeds the cap.
+  - Notes: Cap confirmed at 30. Show helper text when exceeded and disable generation.
 
 - [ ] Change "Entrees" label to "Proteins"
   - Impact: Medium
@@ -94,7 +94,7 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Impact: Medium
   - Effort: Medium
   - Status: todo
-  - Notes: Encode state; consider short links.
+  - Notes: Encode state; integrate short-link service (e.g., TinyURL, Rebrandly). Research required.
 
 - [ ] Error tracking & session replay (Sentry + Replay) to catch UX issues quickly
   - Impact: High
@@ -144,7 +144,7 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
 ---
 
 # Open Questions / Decisions
-- Max items cap before generation: propose starting at 30; confirm target.
+- Max items cap before generation: confirmed at 30.
 - Calorie/nutrition source of truth: do we estimate or require structured data?
 - Share/state format: URL query vs short link service.
 - Data model for substitutes and aisles: static JSON vs Supabase tables.
@@ -153,10 +153,48 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
 
 # Suggestions for your approval (not yet added to roadmap)
 - Performance: code‑split heavy routes and lazy‑load large lists/images
-  - Impact: High | Effort: Medium
 - Accessibility pass: color contrast, focus order, keyboard nav on web
   - Impact: Medium | Effort: Easy
 - Analytics: basic event tracking for generate, save, print, share
   - Impact: Medium | Effort: Easy
 
 Confirm which of these you’d like me to add to the roadmap.
+
+---
+
+# Phase 4: Go-to-Market (App Stores, Website, Socials, Content)
+- [ ] App Store readiness (iOS + Android)
+  - Impact: High
+  - Effort: Medium
+  - Status: todo
+  - Notes: App metadata (name, icons, splash), bundle IDs, EAS signing/build profiles, privacy manifest (iOS), screenshots, store descriptions. Flow: EAS Build → TestFlight/Internal → Review.
+
+- [ ] Website (Landing + Policies)
+  - Impact: High
+  - Effort: Medium
+  - Status: todo
+  - Notes: Landing page (value prop, screenshots, CTAs), SEO basics, analytics, Privacy Policy + Terms pages. Deploy via Netlify.
+
+- [ ] Social accounts + Branding kit
+  - Impact: Medium
+  - Effort: Easy
+  - Status: todo
+  - Notes: Reserve handles (YouTube, TikTok, Instagram, X, Facebook), bios, posting cadence, logo/color/font templates.
+
+- [ ] Affiliate links (ingredients/equipment)
+  - Impact: Medium
+  - Effort: Medium
+  - Status: todo
+  - Notes: Start with Amazon Associates; add disclosures. Place links in dish/equipment cards, shopping list, website. Later integrate short links (Phase 2).
+
+- [ ] Content & Video plan (Calendar)
+  - Impact: High
+  - Effort: Medium
+  - Status: todo
+  - Notes: Weekly cadence (feature, tip, story, ingredient subs, community, planner). Example: date‑night "impress your date" demo; budget week; high‑protein week.
+
+- [ ] AI Video Automation (Scoping → MVP)
+  - Impact: Medium
+  - Effort: Hard
+  - Status: todo
+  - Notes: MVP 1: slideshow + TTS + music, assembled via worker service (FFmpeg) and auto‑upload to YouTube; return link to user. Not suitable for Netlify Functions—use a queue + worker (Cloud Run/Lambda). Future: multi‑platform uploads.
