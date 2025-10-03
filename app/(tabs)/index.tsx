@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   SafeAreaView,
 } from 'react-native';
+import { Platform } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { DropdownSelector } from '@/components/DropdownSelector';
 import { SEASONINGS, VEGETABLES, ENTREES, PASTAS, EQUIPMENT } from '@/constants/ingredients';
 import { supabase } from '@/lib/supabase';
@@ -28,9 +30,40 @@ export default function HomeScreen() {
   const [error, setError] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const [dishesOffsetY, setDishesOffsetY] = useState<number | null>(null);
+  const [shareMsg, setShareMsg] = useState('');
+  const qs = useLocalSearchParams();
 
   useEffect(() => {
     loadUserSelections();
+  }, []);
+
+  // Prefill selections from querystring (web share links)
+  useEffect(() => {
+    // Only run on first render
+    const parseParam = (key: string) => {
+      const v = qs[key];
+      if (!v) return [] as string[];
+      const raw = Array.isArray(v) ? v[0] : v;
+      return raw
+        .split(',')
+        .map((s) => decodeURIComponent(s.trim()))
+        .filter(Boolean);
+    };
+
+    const s = parseParam('seasonings');
+    const v = parseParam('vegetables');
+    const e = parseParam('entrees');
+    const p = parseParam('pastas');
+    const eq = parseParam('equipment');
+
+    if (s.length || v.length || e.length || p.length || eq.length) {
+      setSeasonings(s);
+      setVegetables(v);
+      setEntrees(e);
+      setPastas(p);
+      setEquipment(eq);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadUserSelections = async () => {
@@ -136,6 +169,37 @@ export default function HomeScreen() {
   const totalSelected = seasonings.length + vegetables.length + entrees.length + pastas.length;
   const remainingGlobal = Math.max(0, 30 - totalSelected);
 
+  const buildShareUrl = () => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return '';
+    const params = new URLSearchParams();
+    if (seasonings.length) params.set('seasonings', seasonings.map(encodeURIComponent).join(','));
+    if (vegetables.length) params.set('vegetables', vegetables.map(encodeURIComponent).join(','));
+    if (entrees.length) params.set('entrees', entrees.map(encodeURIComponent).join(','));
+    if (pastas.length) params.set('pastas', pastas.map(encodeURIComponent).join(','));
+    if (equipment.length) params.set('equipment', equipment.map(encodeURIComponent).join(','));
+    const qs = params.toString();
+    return `${window.location.origin}${window.location.pathname}${qs ? `?${qs}` : ''}`;
+  };
+
+  const onShare = async () => {
+    if (Platform.OS !== 'web') return;
+    try {
+      const url = buildShareUrl();
+      await navigator.clipboard.writeText(url);
+      setShareMsg('Share link copied to clipboard');
+      setTimeout(() => setShareMsg(''), 2000);
+    } catch (e) {
+      setShareMsg('Unable to copy link');
+      setTimeout(() => setShareMsg(''), 2000);
+    }
+  };
+
+  const onPrint = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.print) {
+      window.print();
+    }
+  };
+
   // After results render and layout reports the Y offset, perform the scroll.
   useEffect(() => {
     if (generatedDishes.length > 0 && dishesOffsetY != null) {
@@ -207,10 +271,22 @@ export default function HomeScreen() {
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {shareMsg ? <Text style={styles.helper}>{shareMsg}</Text> : null}
         {remainingGlobal === 0 && (
           <Text style={styles.helper}>
             You\'ve reached the 30 item limit. Remove some selections to add more.
           </Text>
+        )}
+
+        {Platform.OS === 'web' && (
+          <View style={styles.shareRow}>
+            <TouchableOpacity style={[styles.secondaryButton]} onPress={onShare}>
+              <Text style={styles.secondaryButtonText}>Share</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.secondaryButton]} onPress={onPrint}>
+              <Text style={styles.secondaryButtonText}>Print</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         <TouchableOpacity
@@ -298,6 +374,27 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  secondaryButton: {
+    borderWidth: 2,
+    borderColor: '#E1E8ED',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    color: '#2C3E50',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  shareRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 12,
   },
   helper: {
     color: '#5A6C7D',
