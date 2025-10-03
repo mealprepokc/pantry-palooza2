@@ -87,6 +87,19 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle }: DishScore
     return Math.round(total / 10) * 10; // round to nearest 10
   }, [dish.ingredients]);
 
+  // Abbreviate cuisine names to help keep the meta row to one line on mobile.
+  const cuisineAbbrev = useMemo(() => {
+    const raw = (dish.cuisine_type || '').trim();
+    const map: Record<string, string> = {
+      American: 'Amer',
+      Mediterranean: 'Med',
+      Italian: 'Ita',
+    };
+    if (map[raw as keyof typeof map]) return map[raw as keyof typeof map];
+    // Fallback: take first 3 letters capitalized
+    return raw.length > 3 ? raw.slice(0, 3) : raw;
+  }, [dish.cuisine_type]);
+
   const handleSave = async () => {
     if (!user) return;
 
@@ -137,12 +150,12 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle }: DishScore
           <View style={styles.titleContainer}>
             <Text style={styles.title}>{dish.title}</Text>
             <View style={styles.metaRow}>
-              <Text style={styles.cuisine}>{dish.cuisine_type}</Text>
+              <Text style={styles.cuisine} numberOfLines={1} ellipsizeMode="tail">{cuisineAbbrev}</Text>
               <View style={styles.timeContainer}>
                 <Clock size={14} color="#5A6C7D" />
-                <Text style={styles.time}>{dish.cooking_time}</Text>
+                <Text style={styles.time} numberOfLines={1} ellipsizeMode="clip">{dish.cooking_time}</Text>
               </View>
-              <Text style={styles.calories}>~{caloriesEstimate} kcal</Text>
+              <Text style={styles.calories} numberOfLines={1} ellipsizeMode="clip">~{caloriesEstimate} kcal</Text>
             </View>
           </View>
           <TouchableOpacity
@@ -216,6 +229,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
+    flexWrap: 'nowrap',
   },
   calories: {
     marginLeft: 8,
