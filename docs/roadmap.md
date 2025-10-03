@@ -96,6 +96,12 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Status: todo
   - Notes: Encode state; consider short links.
 
+- [ ] Error tracking & session replay (Sentry + Replay) to catch UX issues quickly
+  - Impact: High
+  - Effort: Easy‑Medium
+  - Status: todo
+  - Notes: Prod-only, privacy-safe defaults; add `SENTRY_DSN` in Netlify env; initialize early on web.
+
 ---
 
 # Phase 3: Advanced & Polish (Higher effort or scope)
@@ -146,8 +152,6 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
 ---
 
 # Suggestions for your approval (not yet added to roadmap)
-- Error tracking & session replay (Sentry + Replay) to catch UX issues quickly
-  - Impact: High | Effort: Easy‑Medium
 - Performance: code‑split heavy routes and lazy‑load large lists/images
   - Impact: High | Effort: Medium
 - Accessibility pass: color contrast, focus order, keyboard nav on web
