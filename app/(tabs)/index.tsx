@@ -124,12 +124,6 @@ export default function HomeScreen() {
       }
 
       setGeneratedDishes(data.dishes);
-      // After dishes are set, scroll to the results section when layout info is known
-      setTimeout(() => {
-        if (scrollRef.current && dishesOffsetY != null) {
-          scrollRef.current.scrollTo({ y: dishesOffsetY - 12, animated: true });
-        }
-      }, 50);
     } catch (err) {
       setError('Failed to generate dishes. Please try again.');
       console.error(err);
@@ -141,6 +135,24 @@ export default function HomeScreen() {
   const hasSelections = seasonings.length > 0 || vegetables.length > 0 || entrees.length > 0 || pastas.length > 0;
   const totalSelected = seasonings.length + vegetables.length + entrees.length + pastas.length;
   const remainingGlobal = Math.max(0, 30 - totalSelected);
+
+  // After results render and layout reports the Y offset, perform the scroll.
+  useEffect(() => {
+    if (generatedDishes.length > 0 && dishesOffsetY != null) {
+      // Defer to next frame to ensure layout is committed on mobile Safari
+      const id = requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          try {
+            scrollRef.current.scrollTo({ y: Math.max(0, dishesOffsetY - 12), animated: true });
+          } catch (_) {
+            // Fallback
+            scrollRef.current.scrollToEnd({ animated: true });
+          }
+        }
+      });
+      return () => cancelAnimationFrame(id);
+    }
+  }, [generatedDishes.length, dishesOffsetY]);
 
   return (
     <SafeAreaView style={styles.container}>
