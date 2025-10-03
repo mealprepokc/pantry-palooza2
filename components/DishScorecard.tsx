@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Pressable } from 'react-native';
 import { GeneratedDish } from '@/types/database';
 import { BookmarkPlus, BookmarkCheck, Clock } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
@@ -15,6 +15,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle }: DishScore
   const { user } = useAuth();
   const [saved, setSaved] = useState(isSaved);
   const [saving, setSaving] = useState(false);
+  const [pressed, setPressed] = useState(false);
 
   // Very lightweight calorie estimator. This is intentionally simple and conservative.
   const caloriesEstimate = useMemo(() => {
@@ -144,7 +145,14 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle }: DishScore
   };
 
   return (
-    <View style={styles.card}>
+    <Pressable
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[
+        styles.card,
+        pressed && styles.cardPressed,
+      ]}
+    >
       <View style={styles.content}>
         <View style={styles.header}>
           <View style={styles.titleContainer}>
@@ -189,7 +197,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle }: DishScore
           <Text style={styles.instructions}>{dish.instructions}</Text>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -206,6 +214,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 3,
+  },
+  cardPressed: {
+    borderColor: '#4ECDC4',
+    shadowColor: '#4ECDC4',
+    shadowOpacity: 0.2,
+    transform: [{ scale: 0.995 }],
   },
   content: {
     padding: 20,

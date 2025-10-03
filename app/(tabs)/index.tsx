@@ -278,16 +278,7 @@ export default function HomeScreen() {
           </Text>
         )}
 
-        {Platform.OS === 'web' && (
-          <View style={styles.shareRow}>
-            <TouchableOpacity style={[styles.secondaryButton]} onPress={onShare}>
-              <Text style={styles.secondaryButtonText}>Share</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.secondaryButton]} onPress={onPrint}>
-              <Text style={styles.secondaryButtonText}>Print</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {/* Share/Print temporarily hidden for Phase 1 polish */}
 
         <TouchableOpacity
           style={[styles.generateButton, (!hasSelections || !equipment.length) && styles.generateButtonDisabled]}
