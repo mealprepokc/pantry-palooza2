@@ -22,7 +22,7 @@ const KNOWN_MAP: Record<string, string[]> = {
   Seasonings: SEASONINGS,
   Produce: VEGETABLES, // rename of Vegetables
   Proteins: ENTREES,
-  'Pasta & Grains': PASTAS,
+  Pasta: PASTAS,
   Equipment: EQUIPMENT,
   Grains: DEFAULTS.Grains,
   Breads: DEFAULTS.Breads,
@@ -40,7 +40,7 @@ export default function LibraryScreen() {
     Seasonings: [],
     Produce: [],
     Proteins: [],
-    'Pasta & Grains': [],
+    Pasta: [],
     Equipment: [],
     Grains: [],
     Breads: [],
@@ -56,7 +56,7 @@ export default function LibraryScreen() {
     Seasonings: '',
     Produce: '',
     Proteins: '',
-    'Pasta & Grains': '',
+    Pasta: '',
     Equipment: '',
     Grains: '',
     Breads: '',
@@ -81,7 +81,7 @@ export default function LibraryScreen() {
           Seasonings: lib.seasonings || [],
           Produce: lib.produce || lib.vegetables || [],
           Proteins: lib.proteins || lib.entrees || [],
-          'Pasta & Grains': lib.pastas || [],
+          Pasta: lib.pastas || [],
           Equipment: lib.equipment || [],
           Grains: lib.grains || [],
           Breads: lib.breads || [],
@@ -104,7 +104,7 @@ export default function LibraryScreen() {
         Seasonings: oldSel?.seasonings || [],
         Produce: oldSel?.vegetables || [],
         Proteins: oldSel?.entrees || [],
-        'Pasta & Grains': oldSel?.pastas || [],
+        Pasta: oldSel?.pastas || [],
         Equipment: oldSel?.equipment || [],
         Grains: [],
         Breads: [],
@@ -177,6 +177,17 @@ export default function LibraryScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Your Library</Text>
         <Text style={styles.headerSubtitle}>Manage your ingredients. Add custom items any time.</Text>
+        <TouchableOpacity
+          onPress={() => {
+            const allExpanded = Object.values(expanded).every(Boolean);
+            const next: Record<string, boolean> = {};
+            SECTION_KEYS.forEach((k) => (next[k] = !allExpanded));
+            setExpanded(next);
+          }}
+          style={styles.expandAll}
+        >
+          <Text style={styles.expandAllText}>Toggle expand all defaults</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -254,9 +265,12 @@ export default function LibraryScreen() {
         <View style={{ height: 16 }} />
         <TouchableOpacity
           style={styles.primary}
-          onPress={() => router.push('/(tabs)')}
+          onPress={async () => {
+            if (user) await safeUpsertLibrary(user.id, data);
+            Alert.alert('Saved', 'Your Library has been saved.');
+          }}
         >
-          <Text style={styles.primaryText}>Use My Library</Text>
+          <Text style={styles.primaryText}>Save My Library</Text>
         </TouchableOpacity>
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -282,7 +296,7 @@ function normalizeAndRelocate(src: Record<string, string[]>) {
     Seasonings: uniqueSorted(src.Seasonings || []),
     Produce: uniqueSorted(src.Produce || []),
     Proteins: uniqueSorted(src.Proteins || []),
-    'Pasta & Grains': uniqueSorted(src['Pasta & Grains'] || []),
+    Pasta: uniqueSorted(src.Pasta || []),
     Equipment: uniqueSorted(src.Equipment || []),
     Grains: uniqueSorted(src.Grains || []),
     Breads: uniqueSorted(src.Breads || []),
@@ -301,13 +315,13 @@ function normalizeAndRelocate(src: Record<string, string[]>) {
 
   // Split some grains from Pasta & Grains if misfiled
   const grainKeywords = ['rice','quinoa','oats','barley','farro','millet','buckwheat'];
-  out.Grains = uniqueSorted([...out.Grains, ...out['Pasta & Grains'].filter((i) => includesAny(i, grainKeywords))]);
-  out['Pasta & Grains'] = out['Pasta & Grains'].filter((i) => !includesAny(i, grainKeywords));
+  out.Grains = uniqueSorted([...out.Grains, ...out.Pasta.filter((i) => includesAny(i, grainKeywords))]);
+  out.Pasta = out.Pasta.filter((i) => !includesAny(i, grainKeywords));
 
   // Move breads if present in grains/pastas by mistake
   const breadKeywords = ['bread','tortilla','pita','baguette','bun','roll','naan'];
-  out.Breads = uniqueSorted([...out.Breads, ...out['Pasta & Grains'].filter((i) => includesAny(i, breadKeywords))]);
-  out['Pasta & Grains'] = out['Pasta & Grains'].filter((i) => !includesAny(i, breadKeywords));
+  out.Breads = uniqueSorted([...out.Breads, ...out.Pasta.filter((i) => includesAny(i, breadKeywords))]);
+  out.Pasta = out.Pasta.filter((i) => !includesAny(i, breadKeywords));
 
   // Dairy from produce/seasonings if misfiled
   const dairyKeywords = ['milk','cheese','butter','yogurt','cream'];
@@ -347,7 +361,7 @@ async function safeUpsertLibrary(userId: string, updated: Record<string, string[
     seasonings: updated.Seasonings,
     produce: updated.Produce,
     proteins: updated.Proteins,
-    pastas: updated['Pasta & Grains'],
+    pastas: updated.Pasta,
     equipment: updated.Equipment,
     grains: updated.Grains,
     breads: updated.Breads,
@@ -364,7 +378,7 @@ async function safeUpsertLibrary(userId: string, updated: Record<string, string[
       seasonings: updated.Seasonings,
       vegetables: updated.Produce,
       proteins: updated.Proteins,
-      pastas: updated['Pasta & Grains'],
+      pastas: updated.Pasta,
       equipment: updated.Equipment,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' });
@@ -393,6 +407,8 @@ const styles = StyleSheet.create({
   defaultChipSelected: { borderColor: '#4ECDC4', backgroundColor: '#EFFFFD' },
   defaultChipText: { color: '#2C3E50', fontWeight: '600' },
   defaultChipTextSelected: { color: '#0B6B64' },
+  expandAll: { marginTop: 8, alignSelf: 'flex-start' },
+  expandAllText: { color: '#4ECDC4', fontWeight: '800' },
   itemsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   itemChip: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#E1E8ED', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#FFF' },
   itemText: { color: '#2C3E50', fontWeight: '600' },
