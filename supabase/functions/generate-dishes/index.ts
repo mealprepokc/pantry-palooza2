@@ -16,9 +16,15 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { seasonings, vegetables, entrees, pastas, equipment } = body;
+    const { seasonings = [], vegetables = [], entrees = [], pastas = [], equipment = [], filters = {} } = body || {};
+    const { mealType = 'Dinner', servings = 2, maxTimeMinutes = null, mode = 'strict' } = filters as {
+      mealType?: 'Breakfast' | 'Lunch' | 'Dinner';
+      servings?: number;
+      maxTimeMinutes?: number | null;
+      mode?: 'strict' | 'loose';
+    };
 
-    console.log('Received request:', { seasonings, vegetables, entrees, pastas, equipment });
+    console.log('Received request:', { seasonings, vegetables, entrees, pastas, equipment, filters: { mealType, servings, maxTimeMinutes, mode } });
 
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
 
@@ -42,7 +48,15 @@ Deno.serve(async (req: Request) => {
 
     const equipmentList = equipment.join(', ');
 
-    const prompt = `You are a creative chef AI. Generate exactly 5 unique and delicious dish ideas based on the following:\n\nAvailable Ingredients: ${ingredientsList}\nAvailable Equipment: ${equipmentList}\n\nFor each dish, provide:\n1. A creative and appetizing dish title\n2. The cuisine type (e.g., Italian, Asian, Mexican, American, Mediterranean)\n3. Approximate cooking time (e.g., "20 mins", "45 mins", "1 hour")\n4. A complete list of ingredients including the provided ingredients PLUS common pantry staples (oil, butter, flour, sugar, etc.)\n5. Detailed step-by-step preparation and cooking instructions\n\nReturn the response as a JSON array with exactly 5 dishes. Each dish should have this structure:\n{\n  "title": "Dish Name",\n  "cuisine_type": "Cuisine Type",\n  "cooking_time": "30 mins",\n  "ingredients": ["ingredient 1", "ingredient 2", ...],\n  "instructions": "Detailed step-by-step instructions..."\n}\n\nMake sure the dishes are creative, practical, and use the available equipment. Include cooking times and temperatures where relevant in the instructions.`;
+    const strictnessNote = mode === 'strict'
+      ? `STRICT mode: Only use ingredients from the provided list (plus basic pantry staples like salt, pepper, oil, water). Do NOT introduce other ingredients.`
+      : `LOOSE mode: Prefer the provided ingredients, but you may introduce reasonable additions or substitutes if they significantly improve the dish. Keep added items minimal and practical.`;
+
+    const timeNote = maxTimeMinutes && Number(maxTimeMinutes) > 0
+      ? `Target total cooking time for each dish: at most ${maxTimeMinutes} minutes.`
+      : `No hard time limit; choose appropriate times.`;
+
+    const prompt = `You are a creative chef AI. Generate exactly 5 unique and delicious ${mealType.toLowerCase()} dish ideas based on the following:\n\nAvailable Ingredients: ${ingredientsList}\nAvailable Equipment: ${equipmentList || 'Any'}\nServings: ${servings}\n${timeNote}\n${strictnessNote}\n\nFor each dish, provide:\n1. A creative and appetizing dish title\n2. The cuisine type (e.g., Italian, Asian, Mexican, American, Mediterranean)\n3. Approximate cooking time (e.g., "20 mins", "45 mins", "1 hour")\n4. A complete list of ingredients, scaled for ${servings} servings, respecting the strictness rule\n5. Detailed step-by-step preparation and cooking instructions\n\nReturn the response as a JSON array with exactly 5 dishes. Each dish should have this structure:\n{\n  "title": "Dish Name",\n  "cuisine_type": "Cuisine Type",\n  "cooking_time": "30 mins",\n  "ingredients": ["ingredient 1", "ingredient 2", ...],\n  "instructions": "Detailed step-by-step instructions..."\n}\n\nMake sure the dishes are creative, practical, and use the available equipment when relevant. Include cooking temperatures where relevant.`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
