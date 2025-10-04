@@ -38,11 +38,51 @@ const KNOWN_MAP: Record<string, string[]> = {
 };
 
 const SECTION_KEYS = Object.keys(KNOWN_MAP) as (keyof typeof KNOWN_MAP)[];
+// Render order for a more natural flow
+const RENDER_KEYS: (keyof typeof KNOWN_MAP)[] = [
+  'Produce',
+  'Proteins',
+  'Pasta',
+  'Grains',
+  'Breads',
+  'Sauces/Condiments',
+  'Dairy',
+  'Seasonings',
+  'Non-Perishable Items',
+  'Equipment',
+];
+
+// Cross-section weighting for suggestions
+const WEIGHTS: Record<string, string[]> = {
+  Produce: ['Sauces/Condiments', 'Seasonings', 'Dairy', 'Breads', 'Grains', 'Pasta', 'Proteins'],
+  Proteins: ['Sauces/Condiments', 'Seasonings', 'Dairy', 'Grains', 'Breads', 'Pasta', 'Produce'],
+  Pasta: ['Sauces/Condiments', 'Seasonings', 'Dairy', 'Proteins', 'Produce', 'Breads', 'Grains'],
+  Grains: ['Proteins', 'Sauces/Condiments', 'Seasonings', 'Produce', 'Breads', 'Pasta', 'Dairy'],
+  Breads: ['Proteins', 'Sauces/Condiments', 'Dairy', 'Produce', 'Seasonings'],
+  'Sauces/Condiments': ['Produce', 'Proteins', 'Seasonings', 'Dairy', 'Breads'],
+  Dairy: ['Produce', 'Proteins', 'Breads', 'Pasta', 'Seasonings'],
+  Seasonings: ['Produce', 'Proteins', 'Sauces/Condiments', 'Dairy', 'Pasta'],
+  'Non-Perishable Items': ['Pasta', 'Grains', 'Sauces/Condiments', 'Seasonings'],
+  Equipment: [],
+};
 
 export default function LibraryScreen() {
   const { user } = useAuth();
 
   const [data, setData] = useState<Record<string, string[]>>({
+    Seasonings: [],
+    Produce: [],
+    Proteins: [],
+    Pasta: [],
+    Equipment: [],
+    Grains: [],
+    Breads: [],
+    'Sauces/Condiments': [],
+    Dairy: [],
+    'Non-Perishable Items': [],
+  });
+  // Track items that should remain visible even if deselected (e.g., custom additions)
+  const [extras, setExtras] = useState<Record<string, string[]>>({
     Seasonings: [],
     Produce: [],
     Proteins: [],
@@ -156,8 +196,14 @@ export default function LibraryScreen() {
     if (!value) return;
     // text-only validation
     const clean = value.replace(/\s+/g, ' ').replace(/[^\p{L}\p{N}\s&\-']/gu, '').trim();
+    const toAdd = capitalize(clean);
+    // mark as selected
     const current = new Set([...(data[section] || [])]);
-    current.add(capitalize(clean));
+    current.add(toAdd);
+    // keep visible even if later deselected
+    const ex = new Set([...(extras[section] || [])]);
+    ex.add(toAdd);
+    setExtras({ ...extras, [section]: uniqueSorted(Array.from(ex)) });
     const updated = { ...data, [section]: Array.from(current).sort() };
     setInputs({ ...inputs, [section]: '' });
     persist(updated);
@@ -170,6 +216,10 @@ export default function LibraryScreen() {
 
   const toggleSelectedChip = (section: string, item: string) => {
     const has = (data[section] || []).includes(item);
+    // ensure item is tracked in extras so it remains visible
+    const ex = new Set([...(extras[section] || [])]);
+    ex.add(item);
+    setExtras({ ...extras, [section]: uniqueSorted(Array.from(ex)) });
     if (has) {
       removeItem(section, item);
     } else {
@@ -198,78 +248,78 @@ export default function LibraryScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {SECTION_KEYS.map((section) => (
+        {RENDER_KEYS.map((section) => (
           <View key={section} style={styles.section}>
             <Text style={styles.sectionTitle}>{section}</Text>
+            <View style={styles.itemsGrid}>
+              {uniqueSorted([...
+                (((DEFAULTS as any)[section] as string[]) || []),
+                ...((extras[section] as string[]) || []),
+                ...((data[section] as string[]) || []),
+              ]).map((item) => {
+                const selected = (data[section] || []).includes(item);
+                return (
+                  <TouchableOpacity key={item} style={[styles.itemChip, selected && styles.defaultChipSelected]} onPress={() => toggleSelectedChip(section, item)}>
+                    <Text style={[styles.itemText, selected && styles.defaultChipTextSelected]}>{item}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
             {/* Add more items */}
-            <TouchableOpacity
-              onPress={() => setExpandedMore({ ...expandedMore, [section]: !expandedMore[section] })}
-              style={styles.dropdownHeader}
-            >
-              <Text style={styles.dropdownHeaderText}>
-                {expandedMore[section] ? 'Hide' : 'Add more items'}
-              </Text>
-            </TouchableOpacity>
-            {expandedMore[section] && (
-              <>
-                <View style={styles.defaultsGrid}>
-                  {moreListFor(section, data[section]).map((item) => {
-                    const selected = (data[section] || []).includes(item);
-                    return (
-                      <TouchableOpacity
-                        key={item}
-                        onPress={() => toggleSelectedChip(section, item)}
-                        style={[styles.defaultChip, selected && styles.defaultChipSelected]}
-                      >
-                        <Text style={[styles.defaultChipText, selected && styles.defaultChipTextSelected]}>
-                          {item}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                <View style={styles.addRow}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder={`Type to add more to ${section}`}
-                    value={inputs[section]}
-                    onChangeText={(t) => setInputs({ ...inputs, [section]: t })}
-                    autoCapitalize="words"
-                    autoCorrect
-                  />
-                  <TouchableOpacity style={styles.addButton} onPress={() => addItem(section)}>
-                    <Text style={styles.addButtonText}>Add</Text>
-                  </TouchableOpacity>
-                </View>
-                {suggestions(section).length > 0 && (
-                  <View style={styles.suggestions}>
-                    {suggestions(section).map((s) => (
-                      <TouchableOpacity
-                        key={s}
-                        onPress={() => {
-                          const current = new Set([...(data[section] || [])]);
-                          current.add(s);
-                          persist({ ...data, [section]: Array.from(current).sort() });
-                          setInputs({ ...inputs, [section]: '' });
-                        }}
-                        style={styles.suggestionChip}
-                      >
-                        <Text style={styles.suggestionText}>{s}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </>
-            )}
-
-            <View style={styles.itemsGrid}>
-              {(data[section] || []).slice(0, 20).map((item) => (
-                <TouchableOpacity key={item} style={styles.itemChip} onPress={() => toggleSelectedChip(section, item)}>
-                  <Text style={styles.itemText}>{item}</Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.dropdownHeader}>
+              <Text style={styles.dropdownHeaderText}>Add more items</Text>
             </View>
+            <View style={styles.defaultsGrid}>
+              {moreListFor(section, data[section]).map((item) => {
+                const selected = (data[section] || []).includes(item);
+                return (
+                  <TouchableOpacity
+                    key={item}
+                    onPress={() => toggleSelectedChip(section, item)}
+                    style={[styles.defaultChip, selected && styles.defaultChipSelected]}
+                  >
+                    <Text style={[styles.defaultChipText, selected && styles.defaultChipTextSelected]}>
+                      {item}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <View style={styles.addRow}>
+              <TextInput
+                style={styles.input}
+                placeholder={`Type to add more to ${section}`}
+                value={inputs[section]}
+                onChangeText={(t) => setInputs({ ...inputs, [section]: t })}
+                autoCapitalize="words"
+                autoCorrect
+              />
+              <TouchableOpacity style={styles.addButton} onPress={() => addItem(section)}>
+                <Text style={styles.addButtonText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+            {suggestions(section).length > 0 && (
+              <View style={styles.suggestions}>
+                {suggestions(section).map((s) => (
+                  <TouchableOpacity
+                    key={s}
+                    onPress={() => {
+                      const current = new Set([...(data[section] || [])]);
+                      current.add(s);
+                      const ex = new Set([...(extras[section] || [])]);
+                      ex.add(s);
+                      setExtras({ ...extras, [section]: uniqueSorted(Array.from(ex)) });
+                      persist({ ...data, [section]: Array.from(current).sort() });
+                      setInputs({ ...inputs, [section]: '' });
+                    }}
+                    style={styles.suggestionChip}
+                  >
+                    <Text style={styles.suggestionText}>{s}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         ))}
 
@@ -382,11 +432,37 @@ function fillDefaults(current: Record<string, string[]>) {
 
 // Build a list of additional ingredients to show in the "More ingredients" dropdown
 function moreListFor(section: string, current: string[] = []) {
-  const base = new Set<string>([...((KNOWN_MAP as any)[section] || []), ...(((DEFAULTS as any)[section] as string[]) || [])]);
-  // remove items already selected
-  current.forEach((it) => base.delete(it));
-  // show up to 15 items
-  return Array.from(base).sort().slice(0, 15);
+  const same = [
+    ...(((KNOWN_MAP as any)[section] as string[]) || []),
+    ...(((DEFAULTS as any)[section] as string[]) || []),
+  ];
+  const order = WEIGHTS[section] && WEIGHTS[section].length ? WEIGHTS[section] : SECTION_KEYS.filter((k) => k !== section) as string[];
+  const seen = new Set<string>();
+  const selected = new Set((current || []).map(capitalize));
+  const ordered: string[] = [];
+  // same-section first
+  for (const it of same) {
+    const c = capitalize(it);
+    if (!selected.has(c) && !seen.has(c)) {
+      seen.add(c);
+      ordered.push(c);
+    }
+  }
+  // then follow weight order across sections
+  for (const k of order) {
+    const arr = [
+      ...(((KNOWN_MAP as any)[k] as string[]) || []),
+      ...(((DEFAULTS as any)[k] as string[]) || []),
+    ];
+    for (const it of arr) {
+      const c = capitalize(it);
+      if (!selected.has(c) && !seen.has(c)) {
+        seen.add(c);
+        ordered.push(c);
+      }
+    }
+  }
+  return ordered.slice(0, 30);
 }
 
 // Ensure defaults are included for any empty section at save time
