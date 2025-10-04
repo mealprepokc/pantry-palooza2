@@ -432,37 +432,22 @@ function fillDefaults(current: Record<string, string[]>) {
 
 // Build a list of additional ingredients to show in the "More ingredients" dropdown
 function moreListFor(section: string, current: string[] = []) {
+  // Only suggest items relevant to the current section
   const same = [
     ...(((KNOWN_MAP as any)[section] as string[]) || []),
     ...(((DEFAULTS as any)[section] as string[]) || []),
   ];
-  const order = WEIGHTS[section] && WEIGHTS[section].length ? WEIGHTS[section] : SECTION_KEYS.filter((k) => k !== section) as string[];
-  const seen = new Set<string>();
   const selected = new Set((current || []).map(capitalize));
-  const ordered: string[] = [];
-  // same-section first
+  const seen = new Set<string>();
+  const out: string[] = [];
   for (const it of same) {
     const c = capitalize(it);
     if (!selected.has(c) && !seen.has(c)) {
       seen.add(c);
-      ordered.push(c);
+      out.push(c);
     }
   }
-  // then follow weight order across sections
-  for (const k of order) {
-    const arr = [
-      ...(((KNOWN_MAP as any)[k] as string[]) || []),
-      ...(((DEFAULTS as any)[k] as string[]) || []),
-    ];
-    for (const it of arr) {
-      const c = capitalize(it);
-      if (!selected.has(c) && !seen.has(c)) {
-        seen.add(c);
-        ordered.push(c);
-      }
-    }
-  }
-  return ordered.slice(0, 30);
+  return out.slice(0, 30);
 }
 
 // Ensure defaults are included for any empty section at save time
