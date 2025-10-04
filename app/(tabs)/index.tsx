@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { GeneratedDish } from '@/types/database';
@@ -24,6 +25,7 @@ export default function HomeScreen() {
   const [proteins, setProteins] = useState<string[]>([]);
   const [pastas, setPastas] = useState<string[]>([]);
   const [equipment, setEquipment] = useState<string[]>([]);
+  const [libraryAny, setLibraryAny] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [generatedDishes, setGeneratedDishes] = useState<GeneratedDish[]>([]);
   const [error, setError] = useState('');
@@ -40,6 +42,21 @@ export default function HomeScreen() {
   useEffect(() => {
     loadUserLibrary();
   }, []);
+
+  // Load when auth state resolves (user becomes available)
+  useEffect(() => {
+    if (user?.id) {
+      loadUserLibrary();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Ensure library is refreshed when returning to this tab
+  useFocusEffect(
+    useCallback(() => {
+      loadUserLibrary();
+    }, [user?.id])
+  );
 
   // Prefill from querystring (optional, web share links) - maps to library-backed state when present
   useEffect(() => {
@@ -77,6 +94,17 @@ export default function HomeScreen() {
       setProteins(lib.proteins || lib.entrees || []);
       setPastas(lib.pastas || []);
       setEquipment(lib.equipment || []);
+      const any =
+        (lib.seasonings?.length || 0) +
+        (lib.produce?.length || lib.vegetables?.length || 0) +
+        (lib.proteins?.length || lib.entrees?.length || 0) +
+        (lib.pastas?.length || 0) +
+        (lib.grains?.length || 0) +
+        (lib.breads?.length || 0) +
+        (lib.sauces_condiments?.length || 0) +
+        (lib.dairy?.length || 0) +
+        (lib.non_perishables?.length || 0) > 0;
+      setLibraryAny(any);
       return;
     }
     const { data } = await supabase
@@ -90,6 +118,13 @@ export default function HomeScreen() {
       setProteins(data.entrees || []);
       setPastas(data.pastas || []);
       setEquipment(data.equipment || []);
+      const any =
+        (data.seasonings?.length || 0) +
+        (data.vegetables?.length || 0) +
+        (data.entrees?.length || 0) +
+        (data.pastas?.length || 0) +
+        (data.equipment?.length || 0) > 0;
+      setLibraryAny(any);
     }
   };
 
@@ -98,8 +133,7 @@ export default function HomeScreen() {
   // UI is filter-only now; no inline ingredient toggles.
 
   const generateDishes = async () => {
-    const hasLibrary = seasonings.length || produce.length || proteins.length || pastas.length;
-    if (!hasLibrary) {
+    if (!libraryAny) {
       setError('Your Library is empty. Add items in Library first.');
       return;
     }
@@ -145,7 +179,7 @@ export default function HomeScreen() {
     }
   };
 
-  const hasLibrary = seasonings.length > 0 || produce.length > 0 || proteins.length > 0 || pastas.length > 0;
+  const hasLibrary = libraryAny;
 
   const buildShareUrl = () => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return '';
