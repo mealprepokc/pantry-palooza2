@@ -1,5 +1,5 @@
 import { Tabs, Redirect } from 'expo-router';
-import { ChefHat, BookMarked } from 'lucide-react-native';
+import { ChefHat, BookMarked, Book } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
@@ -40,6 +40,15 @@ export default function TabLayout() {
           height: 72,
         },
       }}>
+      <Tabs.Screen
+        name="library"
+        options={{
+          title: 'Library',
+          tabBarIcon: ({ size, color }) => (
+            <Book size={size} color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="index"
         options={{
