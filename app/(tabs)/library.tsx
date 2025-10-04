@@ -10,7 +10,13 @@ import { SEASONINGS, VEGETABLES, ENTREES, PASTAS, EQUIPMENT } from '@/constants/
 
 // Defaults for new sections
 const DEFAULTS = {
-  Produce: ['Tomatoes', 'Onions', 'Bell Peppers', 'Spinach', 'Garlic'],
+  // Produce now includes common fruits
+  Produce: [
+    'Tomatoes', 'Onions', 'Bell Peppers', 'Spinach', 'Garlic',
+    'Apples', 'Bananas', 'Strawberries', 'Blueberries', 'Grapes',
+    'Oranges', 'Lemons', 'Limes', 'Avocado', 'Cucumbers',
+    'Carrots', 'Broccoli', 'Mushrooms', 'Zucchini', 'Kale',
+  ],
   Grains: ['Rice', 'Quinoa', 'Oats', 'Barley', 'Farro'],
   Breads: ['Sandwich Bread', 'Tortillas', 'Pita', 'Baguette', 'Hamburger Buns'],
   'Sauces/Condiments': ['Ketchup', 'Mustard', 'Mayonnaise', 'Soy Sauce', 'Hot Sauce'],
@@ -49,8 +55,7 @@ export default function LibraryScreen() {
     'Non-Perishable Items': [],
   });
 
-  // Track expanded/collapsed state for default dropdowns per section
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // Track expanded/collapsed state for "Add more items" per section
   const [expandedMore, setExpandedMore] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
 
@@ -190,58 +195,20 @@ export default function LibraryScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Your Library</Text>
         <Text style={styles.headerSubtitle}>Manage your ingredients. Add/Remove items at any time and remember to save your library when finished.</Text>
-        <TouchableOpacity
-          onPress={() => {
-            const allExpanded = Object.values(expanded).every(Boolean);
-            const next: Record<string, boolean> = {};
-            SECTION_KEYS.forEach((k) => (next[k] = !allExpanded));
-            setExpanded(next);
-          }}
-          style={styles.expandAll}
-        >
-          <Text style={styles.expandAllText}>Toggle expand all defaults</Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         {SECTION_KEYS.map((section) => (
           <View key={section} style={styles.section}>
             <Text style={styles.sectionTitle}>{section}</Text>
-            {/* Default items dropdown */}
-            <TouchableOpacity
-              onPress={() => setExpanded({ ...expanded, [section]: !expanded[section] })}
-              style={styles.dropdownHeader}
-            >
-              <Text style={styles.dropdownHeaderText}>
-                {expanded[section] ? 'Hide' : 'Show'} default items
-              </Text>
-            </TouchableOpacity>
-            {expanded[section] && (
-              <View style={styles.defaultsGrid}>
-                {defaultListFor(section).map((item) => {
-                  const selected = (data[section] || []).includes(item);
-                  return (
-                    <TouchableOpacity
-                      key={item}
-                      onPress={() => toggleDefaultItem(section, item)}
-                      style={[styles.defaultChip, selected && styles.defaultChipSelected]}
-                    >
-                      <Text style={[styles.defaultChipText, selected && styles.defaultChipTextSelected]}>
-                        {item}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
 
-            {/* More ingredients dropdown */}
+            {/* Add more items */}
             <TouchableOpacity
               onPress={() => setExpandedMore({ ...expandedMore, [section]: !expandedMore[section] })}
               style={styles.dropdownHeader}
             >
               <Text style={styles.dropdownHeaderText}>
-                {expandedMore[section] ? 'Hide' : 'More ingredients'}
+                {expandedMore[section] ? 'Hide' : 'Add more items'}
               </Text>
             </TouchableOpacity>
             {expandedMore[section] && (
@@ -297,7 +264,7 @@ export default function LibraryScreen() {
             )}
 
             <View style={styles.itemsGrid}>
-              {(data[section] || []).map((item) => (
+              {(data[section] || []).slice(0, 20).map((item) => (
                 <TouchableOpacity key={item} style={styles.itemChip} onPress={() => toggleSelectedChip(section, item)}>
                   <Text style={styles.itemText}>{item}</Text>
                 </TouchableOpacity>
