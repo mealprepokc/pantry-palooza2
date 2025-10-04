@@ -49,6 +49,9 @@ export default function LibraryScreen() {
     'Non-Perishable Items': [],
   });
 
+  // Track expanded/collapsed state for default dropdowns per section
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
   const [inputs, setInputs] = useState<Record<string, string>>({
     Seasonings: '',
     Produce: '',
@@ -123,6 +126,24 @@ export default function LibraryScreen() {
     await safeUpsertLibrary(user.id, updated);
   };
 
+  const toggleDefaultItem = (section: string, item: string) => {
+    const has = (data[section] || []).includes(item);
+    if (has) {
+      removeItem(section, item);
+    } else {
+      const current = new Set([...(data[section] || [])]);
+      current.add(item);
+      persist({ ...data, [section]: Array.from(current).sort() });
+    }
+  };
+
+  const defaultListFor = (section: string) => {
+    const fromDefaults = (DEFAULTS as any)[section] as string[] | undefined;
+    if (fromDefaults && fromDefaults.length) return fromDefaults;
+    const known = KNOWN_MAP[section] || [];
+    return known.slice(0, 5);
+  };
+
   const addItem = (section: string) => {
     const value = (inputs[section] || '').trim();
     if (!value) return;
@@ -162,6 +183,33 @@ export default function LibraryScreen() {
         {SECTION_KEYS.map((section) => (
           <View key={section} style={styles.section}>
             <Text style={styles.sectionTitle}>{section}</Text>
+            {/* Default items dropdown */}
+            <TouchableOpacity
+              onPress={() => setExpanded({ ...expanded, [section]: !expanded[section] })}
+              style={styles.dropdownHeader}
+            >
+              <Text style={styles.dropdownHeaderText}>
+                {expanded[section] ? 'Hide' : 'Show'} default items
+              </Text>
+            </TouchableOpacity>
+            {expanded[section] && (
+              <View style={styles.defaultsGrid}>
+                {defaultListFor(section).map((item) => {
+                  const selected = (data[section] || []).includes(item);
+                  return (
+                    <TouchableOpacity
+                      key={item}
+                      onPress={() => toggleDefaultItem(section, item)}
+                      style={[styles.defaultChip, selected && styles.defaultChipSelected]}
+                    >
+                      <Text style={[styles.defaultChipText, selected && styles.defaultChipTextSelected]}>
+                        {item}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
             <View style={styles.addRow}>
               <TextInput
                 style={styles.input}
@@ -224,6 +272,105 @@ function capitalize(s: string) {
     .join(' ');
 }
 
+function uniqueSorted(arr: string[]) {
+  return Array.from(new Set(arr.map(capitalize))).sort();
+}
+
+// Heuristic relocation rules for new categories
+function normalizeAndRelocate(src: Record<string, string[]>) {
+  const out: Record<string, string[]> = {
+    Seasonings: uniqueSorted(src.Seasonings || []),
+    Produce: uniqueSorted(src.Produce || []),
+    Proteins: uniqueSorted(src.Proteins || []),
+    'Pasta & Grains': uniqueSorted(src['Pasta & Grains'] || []),
+    Equipment: uniqueSorted(src.Equipment || []),
+    Grains: uniqueSorted(src.Grains || []),
+    Breads: uniqueSorted(src.Breads || []),
+    'Sauces/Condiments': uniqueSorted(src['Sauces/Condiments'] || []),
+    Dairy: uniqueSorted(src.Dairy || []),
+    'Non-Perishable Items': uniqueSorted(src['Non-Perishable Items'] || []),
+  };
+
+  // Move sauces/condiments from Seasonings if present
+  const sauceKeywords = ['ketchup','mustard','mayo','mayonnaise','soy','sriracha','hot sauce','bbq','barbecue','teriyaki','vinegar','relish'];
+  out['Sauces/Condiments'] = uniqueSorted([
+    ...out['Sauces/Condiments'],
+    ...out.Seasonings.filter((i) => includesAny(i, sauceKeywords)),
+  ]);
+  out.Seasonings = out.Seasonings.filter((i) => !includesAny(i, sauceKeywords));
+
+  // Split some grains from Pasta & Grains if misfiled
+  const grainKeywords = ['rice','quinoa','oats','barley','farro','millet','buckwheat'];
+  out.Grains = uniqueSorted([...out.Grains, ...out['Pasta & Grains'].filter((i) => includesAny(i, grainKeywords))]);
+  out['Pasta & Grains'] = out['Pasta & Grains'].filter((i) => !includesAny(i, grainKeywords));
+
+  // Move breads if present in grains/pastas by mistake
+  const breadKeywords = ['bread','tortilla','pita','baguette','bun','roll','naan'];
+  out.Breads = uniqueSorted([...out.Breads, ...out['Pasta & Grains'].filter((i) => includesAny(i, breadKeywords))]);
+  out['Pasta & Grains'] = out['Pasta & Grains'].filter((i) => !includesAny(i, breadKeywords));
+
+  // Dairy from produce/seasonings if misfiled
+  const dairyKeywords = ['milk','cheese','butter','yogurt','cream'];
+  out.Dairy = uniqueSorted([...out.Dairy, ...out.Produce.filter((i) => includesAny(i, dairyKeywords))]);
+  out.Produce = out.Produce.filter((i) => !includesAny(i, dairyKeywords));
+
+  // Non-perishables: basic heuristic
+  const nonPerishKeywords = ['canned','broth','stock','peanut butter','jar'];
+  out['Non-Perishable Items'] = uniqueSorted([
+    ...out['Non-Perishable Items'],
+    ...out.Produce.filter((i) => includesAny(i, nonPerishKeywords)),
+  ]);
+  out.Produce = out.Produce.filter((i) => !includesAny(i, nonPerishKeywords));
+
+  return out;
+}
+
+function includesAny(text: string, set: string[]) {
+  const t = text.toLowerCase();
+  return set.some((k) => t.includes(k));
+}
+
+function fillDefaults(current: Record<string, string[]>) {
+  const next = { ...current };
+  for (const [section, def] of Object.entries(DEFAULTS)) {
+    if ((next as any)[section] && (next as any)[section].length === 0) {
+      (next as any)[section] = def.slice();
+    }
+  }
+  if (next.Produce.length === 0) next.Produce = DEFAULTS.Produce || KNOWN_MAP.Produce || [];
+  return next;
+}
+
+async function safeUpsertLibrary(userId: string, updated: Record<string, string[]>) {
+  const fullPayload: any = {
+    user_id: userId,
+    seasonings: updated.Seasonings,
+    produce: updated.Produce,
+    proteins: updated.Proteins,
+    pastas: updated['Pasta & Grains'],
+    equipment: updated.Equipment,
+    grains: updated.Grains,
+    breads: updated.Breads,
+    sauces_condiments: updated['Sauces/Condiments'],
+    dairy: updated.Dairy,
+    non_perishables: updated['Non-Perishable Items'],
+    updated_at: new Date().toISOString(),
+  };
+  try {
+    await supabase.from('user_library').upsert(fullPayload, { onConflict: 'user_id' });
+  } catch (_) {
+    await supabase.from('user_library').upsert({
+      user_id: userId,
+      seasonings: updated.Seasonings,
+      vegetables: updated.Produce,
+      proteins: updated.Proteins,
+      pastas: updated['Pasta & Grains'],
+      equipment: updated.Equipment,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' });
+  }
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF' },
   header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
@@ -239,6 +386,13 @@ const styles = StyleSheet.create({
   suggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   suggestionChip: { borderWidth: 1, borderColor: '#E1E8ED', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#FFF' },
   suggestionText: { color: '#2C3E50', fontSize: 14, fontWeight: '600' },
+  dropdownHeader: { marginTop: 6, marginBottom: 6 },
+  dropdownHeaderText: { color: '#2C3E50', fontSize: 14, fontWeight: '700' },
+  defaultsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 6 },
+  defaultChip: { borderWidth: 1, borderColor: '#E1E8ED', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#FFF' },
+  defaultChipSelected: { borderColor: '#4ECDC4', backgroundColor: '#EFFFFD' },
+  defaultChipText: { color: '#2C3E50', fontWeight: '600' },
+  defaultChipTextSelected: { color: '#0B6B64' },
   itemsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   itemChip: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#E1E8ED', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#FFF' },
   itemText: { color: '#2C3E50', fontWeight: '600' },

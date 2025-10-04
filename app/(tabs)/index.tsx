@@ -253,7 +253,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.controlGroup}>
-          <Text style={styles.controlLabel}>Mode</Text>
+          <Text style={styles.controlLabel}>Dish Creation Mode</Text>
           <View style={styles.segmentRow}>
             {(['strict','loose'] as const).map((m) => (
               <TouchableOpacity key={m} style={[styles.segment, mode===m && styles.segmentActive]} onPress={() => setMode(m)}>
