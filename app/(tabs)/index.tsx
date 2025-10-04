@@ -9,9 +9,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { Platform } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { DropdownSelector } from '@/components/DropdownSelector';
-import { SEASONINGS, VEGETABLES, ENTREES, PASTAS, EQUIPMENT } from '@/constants/ingredients';
+import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { GeneratedDish } from '@/types/database';
@@ -20,9 +18,10 @@ import { LogOut } from 'lucide-react-native';
 
 export default function HomeScreen() {
   const { user, signOut } = useAuth();
+  // Library-backed selections
   const [seasonings, setSeasonings] = useState<string[]>([]);
-  const [vegetables, setVegetables] = useState<string[]>([]);
-  const [entrees, setEntrees] = useState<string[]>([]);
+  const [produce, setProduce] = useState<string[]>([]);
+  const [proteins, setProteins] = useState<string[]>([]);
   const [pastas, setPastas] = useState<string[]>([]);
   const [equipment, setEquipment] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -32,106 +31,79 @@ export default function HomeScreen() {
   const [dishesOffsetY, setDishesOffsetY] = useState<number | null>(null);
   const [shareMsg, setShareMsg] = useState('');
   const qs = useLocalSearchParams();
+  // Generate controls
+  const [mealType, setMealType] = useState<'Breakfast'|'Lunch'|'Dinner'>('Dinner');
+  const [servings, setServings] = useState<number>(2);
+  const [maxTime, setMaxTime] = useState<number | 'Any'>(30);
+  const [mode, setMode] = useState<'strict'|'loose'>('strict');
 
   useEffect(() => {
-    loadUserSelections();
+    loadUserLibrary();
   }, []);
 
-  // Prefill selections from querystring (web share links)
+  // Prefill from querystring (optional, web share links) - maps to library-backed state when present
   useEffect(() => {
-    // Only run on first render
     const parseParam = (key: string) => {
       const v = qs[key];
       if (!v) return [] as string[];
       const raw = Array.isArray(v) ? v[0] : v;
-      return raw
-        .split(',')
-        .map((s) => decodeURIComponent(s.trim()))
-        .filter(Boolean);
+      return raw.split(',').map((s) => decodeURIComponent(s.trim())).filter(Boolean);
     };
-
     const s = parseParam('seasonings');
     const v = parseParam('vegetables');
     const e = parseParam('entrees');
     const p = parseParam('pastas');
     const eq = parseParam('equipment');
-
-    if (s.length || v.length || e.length || p.length || eq.length) {
-      setSeasonings(s);
-      setVegetables(v);
-      setEntrees(e);
-      setPastas(p);
-      setEquipment(eq);
-    }
+    if (s.length) setSeasonings(s);
+    if (v.length) setProduce(v);
+    if (e.length) setProteins(e);
+    if (p.length) setPastas(p);
+    if (eq.length) setEquipment(eq);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadUserSelections = async () => {
+  const loadUserLibrary = async () => {
     if (!user) return;
-
-    const { data, error } = await supabase
-      .from('user_selections')
+    // Prefer user_library, fallback to legacy user_selections
+    const { data: lib } = await supabase
+      .from('user_library')
       .select('*')
       .eq('user_id', user.id)
       .maybeSingle();
 
+    if (lib) {
+      setSeasonings(lib.seasonings || []);
+      setProduce(lib.produce || lib.vegetables || []);
+      setProteins(lib.proteins || lib.entrees || []);
+      setPastas(lib.pastas || []);
+      setEquipment(lib.equipment || []);
+      return;
+    }
+    const { data } = await supabase
+      .from('user_selections')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
     if (data) {
       setSeasonings(data.seasonings || []);
-      setVegetables(data.vegetables || []);
-      setEntrees(data.entrees || []);
+      setProduce(data.vegetables || []);
+      setProteins(data.entrees || []);
       setPastas(data.pastas || []);
       setEquipment(data.equipment || []);
     }
   };
 
-  const saveUserSelections = async () => {
-    if (!user) return;
+  // No autosave here; Library screen manages persistence.
 
-    const { error } = await supabase
-      .from('user_selections')
-      .upsert({
-        user_id: user.id,
-        seasonings,
-        vegetables,
-        entrees,
-        pastas,
-        equipment,
-        updated_at: new Date().toISOString(),
-      }, {
-        onConflict: 'user_id'
-      });
-
-    if (error) {
-      console.error('Error saving selections:', error);
-    }
-  };
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      saveUserSelections();
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [seasonings, vegetables, entrees, pastas, equipment]);
-
-  const toggleItem = (list: string[], setList: (items: string[]) => void, item: string) => {
-    if (list.includes(item)) {
-      setList(list.filter((i) => i !== item));
-    } else {
-      setList([...list, item]);
-    }
-  };
+  // UI is filter-only now; no inline ingredient toggles.
 
   const generateDishes = async () => {
-    if (!seasonings.length && !vegetables.length && !entrees.length && !pastas.length) {
-      setError('Please select at least some ingredients');
+    const hasLibrary = seasonings.length || produce.length || proteins.length || pastas.length;
+    if (!hasLibrary) {
+      setError('Your Library is empty. Add items in Library first.');
       return;
     }
-
-    if (!equipment.length) {
-      setError('Please select at least one cooking equipment');
-      return;
-    }
+    // Equipment optional but recommended; do not block if empty.
 
     setLoading(true);
     setError('');
@@ -140,11 +112,19 @@ export default function HomeScreen() {
     try {
       const { data, error } = await supabase.functions.invoke('generate-dishes', {
         body: {
+          // Use user_library items
           seasonings,
-          vegetables,
-          entrees,
+          vegetables: produce,
+          entrees: proteins,
           pastas,
           equipment,
+          // New filters
+          filters: {
+            mealType,
+            servings,
+            maxTimeMinutes: maxTime === 'Any' ? null : maxTime,
+            mode,
+          },
         },
       });
 
@@ -165,16 +145,15 @@ export default function HomeScreen() {
     }
   };
 
-  const hasSelections = seasonings.length > 0 || vegetables.length > 0 || entrees.length > 0 || pastas.length > 0;
-  const totalSelected = seasonings.length + vegetables.length + entrees.length + pastas.length;
-  const remainingGlobal = Math.max(0, 30 - totalSelected);
+  const hasLibrary = seasonings.length > 0 || produce.length > 0 || proteins.length > 0 || pastas.length > 0;
 
   const buildShareUrl = () => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return '';
     const params = new URLSearchParams();
     if (seasonings.length) params.set('seasonings', seasonings.map(encodeURIComponent).join(','));
-    if (vegetables.length) params.set('vegetables', vegetables.map(encodeURIComponent).join(','));
-    if (entrees.length) params.set('entrees', entrees.map(encodeURIComponent).join(','));
+    // Keep legacy keys for compatibility, use current state variables
+    if (produce.length) params.set('vegetables', produce.map(encodeURIComponent).join(','));
+    if (proteins.length) params.set('entrees', proteins.map(encodeURIComponent).join(','));
     if (pastas.length) params.set('pastas', pastas.map(encodeURIComponent).join(','));
     if (equipment.length) params.set('equipment', equipment.map(encodeURIComponent).join(','));
     const qs = params.toString();
@@ -223,7 +202,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Pantry Palooza</Text>
-          <Text style={styles.headerSubtitle}>Select your ingredients</Text>
+          <Text style={styles.headerSubtitle}>Choose meal type, time, and servings (uses your Library)</Text>
         </View>
         <TouchableOpacity onPress={signOut} style={styles.logoutButton}>
           <LogOut size={24} color="#666" />
@@ -231,59 +210,71 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView ref={scrollRef} style={styles.scrollView} contentContainerStyle={styles.content}>
-        <DropdownSelector
-          title="Seasonings"
-          items={SEASONINGS}
-          selectedItems={seasonings}
-          onToggle={(item) => toggleItem(seasonings, setSeasonings, item)}
-          maxSelections={seasonings.length + remainingGlobal}
-        />
+        {!hasLibrary && (
+          <View style={styles.emptyLibrary}>
+            <Text style={styles.helper}>Your Library is empty. Add items to Generate dishes.</Text>
+            <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/(tabs)/library' as any)}>
+              <Text style={styles.secondaryButtonText}>Go to Library</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-        <DropdownSelector
-          title="Vegetables"
-          items={VEGETABLES}
-          selectedItems={vegetables}
-          onToggle={(item) => toggleItem(vegetables, setVegetables, item)}
-          maxSelections={vegetables.length + remainingGlobal}
-        />
+        <View style={styles.controlGroup}>
+          <Text style={styles.controlLabel}>Meal Type</Text>
+          <View style={styles.segmentRow}>
+            {(['Breakfast','Lunch','Dinner'] as const).map((m) => (
+              <TouchableOpacity key={m} style={[styles.segment, mealType===m && styles.segmentActive]} onPress={() => setMealType(m)}>
+                <Text style={[styles.segmentText, mealType===m && styles.segmentTextActive]}>{m}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-        <DropdownSelector
-          title="Proteins"
-          items={ENTREES}
-          selectedItems={entrees}
-          onToggle={(item) => toggleItem(entrees, setEntrees, item)}
-          maxSelections={entrees.length + remainingGlobal}
-        />
+        <View style={styles.controlGroup}>
+          <Text style={styles.controlLabel}>Serving Size</Text>
+          <View style={styles.segmentRow}>
+            {[1,2,3,4,5,6].map((n) => (
+              <TouchableOpacity key={n} style={[styles.segment, servings===n && styles.segmentActive]} onPress={() => setServings(n)}>
+                <Text style={[styles.segmentText, servings===n && styles.segmentTextActive]}>{n}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-        <DropdownSelector
-          title="Pasta & Grains"
-          items={PASTAS}
-          selectedItems={pastas}
-          onToggle={(item) => toggleItem(pastas, setPastas, item)}
-          maxSelections={pastas.length + remainingGlobal}
-        />
+        <View style={styles.controlGroup}>
+          <Text style={styles.controlLabel}>Max Prep Time (minutes)</Text>
+          <View style={styles.segmentRow}>
+            {([15,30,45,60,'Any'] as const).map((t) => (
+              <TouchableOpacity key={String(t)} style={[styles.segment, maxTime===t && styles.segmentActive]} onPress={() => setMaxTime(t)}>
+                <Text style={[styles.segmentText, maxTime===t && styles.segmentTextActive]}>{String(t)}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-        <DropdownSelector
-          title="Cooking Equipment"
-          items={EQUIPMENT}
-          selectedItems={equipment}
-          onToggle={(item) => toggleItem(equipment, setEquipment, item)}
-        />
+        <View style={styles.controlGroup}>
+          <Text style={styles.controlLabel}>Mode</Text>
+          <View style={styles.segmentRow}>
+            {(['strict','loose'] as const).map((m) => (
+              <TouchableOpacity key={m} style={[styles.segment, mode===m && styles.segmentActive]} onPress={() => setMode(m)}>
+                <Text style={[styles.segmentText, mode===m && styles.segmentTextActive]}>{m==='strict' ? 'Strict' : 'Loose'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.helper}>
+            {mode==='strict' ? 'Strict: Use only your Library items plus pantry staples (salt, pepper, oil, water).' : 'Loose: Prefer your Library; allow reasonable additions/substitutions.'}
+          </Text>
+        </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {shareMsg ? <Text style={styles.helper}>{shareMsg}</Text> : null}
-        {remainingGlobal === 0 && (
-          <Text style={styles.helper}>
-            You\'ve reached the 30 item limit. Remove some selections to add more.
-          </Text>
-        )}
 
         {/* Share/Print temporarily hidden for Phase 1 polish */}
 
         <TouchableOpacity
-          style={[styles.generateButton, (!hasSelections || !equipment.length) && styles.generateButtonDisabled]}
+          style={[styles.generateButton, !hasLibrary && styles.generateButtonDisabled]}
           onPress={generateDishes}
-          disabled={loading || !hasSelections || !equipment.length}
+          disabled={loading || !hasLibrary}
         >
           {loading ? (
             <ActivityIndicator color="#FFF" />
@@ -344,6 +335,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
     paddingBottom: 32,
+  },
+  emptyLibrary: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  controlGroup: {
+    marginBottom: 16,
+  },
+  controlLabel: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#2C3E50',
+    marginBottom: 8,
+  },
+  segmentRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  segment: {
+    borderWidth: 2,
+    borderColor: '#E1E8ED',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#FFF',
+  },
+  segmentActive: {
+    borderColor: '#4ECDC4',
+    backgroundColor: '#EFFFFD',
+  },
+  segmentText: {
+    color: '#2C3E50',
+    fontWeight: '700',
+  },
+  segmentTextActive: {
+    color: '#0B6B64',
   },
   generateButton: {
     backgroundColor: '#4ECDC4',
