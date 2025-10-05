@@ -482,6 +482,16 @@ async function safeUpsertLibrary(userId: string, updated: Record<string, string[
   };
   try {
     await supabase.from('user_library').upsert(fullPayload, { onConflict: 'user_id' });
+    // Maintain legacy compatibility so older reads still see data
+    await supabase.from('user_selections').upsert({
+      user_id: userId,
+      seasonings: updated.Seasonings,
+      vegetables: updated.Produce,
+      entrees: updated.Proteins,
+      pastas: updated.Pasta,
+      equipment: updated.Equipment,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' });
   } catch (_) {
     await supabase.from('user_library').upsert({
       user_id: userId,
