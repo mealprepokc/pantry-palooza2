@@ -43,6 +43,18 @@ export default function HomeScreen() {
     loadUserLibrary();
   }, []);
 
+  // Fallback: derive libraryAny from current arrays to handle any timing edges
+  useEffect(() => {
+    const any =
+      seasonings.length > 0 ||
+      produce.length > 0 ||
+      proteins.length > 0 ||
+      pastas.length > 0 ||
+      equipment.length > 0;
+    if (any !== libraryAny) setLibraryAny(any);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seasonings.length, produce.length, proteins.length, pastas.length, equipment.length]);
+
   // Load when auth state resolves (user becomes available)
   useEffect(() => {
     if (user?.id) {
@@ -324,7 +336,7 @@ export default function HomeScreen() {
           >
             <Text style={styles.dishesTitle}>Your Personalized Dishes</Text>
             {generatedDishes.map((dish, index) => (
-              <DishScorecard key={index} dish={dish} />
+              <DishScorecard key={index} dish={dish} servings={servings} />
             ))}
           </View>
         )}

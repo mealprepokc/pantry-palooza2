@@ -9,9 +9,10 @@ interface DishScorecardProps {
   dish: GeneratedDish;
   isSaved?: boolean;
   onSaveToggle?: () => void;
+  servings?: number;
 }
 
-export function DishScorecard({ dish, isSaved = false, onSaveToggle }: DishScorecardProps) {
+export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 2 }: DishScorecardProps) {
   const { user } = useAuth();
   const [saved, setSaved] = useState(isSaved);
   const [saving, setSaving] = useState(false);
@@ -88,6 +89,80 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle }: DishScore
     return Math.round(total / 10) * 10; // round to nearest 10
   }, [dish.ingredients]);
 
+  // Rough cost estimator ($) using common ingredient buckets.
+  const costEstimate = useMemo(() => {
+    const priceMap: Record<string, number> = {
+      // proteins (per serving approx)
+      'Chicken Breast': 2.25,
+      'Chicken Thighs': 1.8,
+      'Ground Beef': 2.7,
+      'Ground Turkey': 2.2,
+      'Pork Chops': 2.5,
+      'Steak': 3.5,
+      'Lamb': 3.8,
+      'Salmon': 3.2,
+      'Shrimp': 2.8,
+      'Tilapia': 2.0,
+      'Tuna': 2.2,
+      'Tofu': 1.2,
+      'Eggs': 0.6,
+      'Bacon': 1.2,
+      'Sausage': 1.4,
+
+      // carbs / grains (per serving)
+      'Rice': 0.3,
+      'Pasta': 0.4,
+      'Potatoes': 0.5,
+      'Bread': 0.6,
+
+      // fats / extras (per serving usage)
+      'Olive Oil': 0.2,
+      'Butter': 0.15,
+      'Cheese': 0.6,
+      'Milk': 0.4,
+      'Yogurt': 0.7,
+    };
+
+    let total = 0;
+    let unknowns = 0;
+    for (const ing of dish.ingredients) {
+      if (priceMap[ing]) {
+        total += priceMap[ing];
+        continue;
+      }
+      const key = ing.toLowerCase();
+      if (key.includes('chicken')) total += priceMap['Chicken Breast'];
+      else if (key.includes('beef')) total += priceMap['Ground Beef'];
+      else if (key.includes('turkey')) total += priceMap['Ground Turkey'];
+      else if (key.includes('pork')) total += priceMap['Pork Chops'];
+      else if (key.includes('salmon')) total += priceMap['Salmon'];
+      else if (key.includes('shrimp')) total += priceMap['Shrimp'];
+      else if (key.includes('tofu')) total += priceMap['Tofu'];
+      else if (key.includes('egg')) total += priceMap['Eggs'];
+      else if (key.includes('sausage')) total += priceMap['Sausage'];
+      else if (key.includes('bacon')) total += priceMap['Bacon'];
+      else if (key.includes('pasta') || key.includes('spaghetti') || key.includes('penne') || key.includes('noodle')) total += priceMap['Pasta'];
+      else if (key.includes('rice')) total += priceMap['Rice'];
+      else if (key.includes('potato')) total += priceMap['Potatoes'];
+      else if (key.includes('cheese')) total += priceMap['Cheese'];
+      else if (key.includes('olive oil') || key.includes('oil')) total += priceMap['Olive Oil'];
+      else if (key.includes('butter')) total += priceMap['Butter'];
+      else if (key.includes('bread')) total += priceMap['Bread'];
+      else if (key.includes('milk')) total += priceMap['Milk'];
+      else if (key.includes('yogurt')) total += priceMap['Yogurt'];
+      else unknowns += 1;
+    }
+
+    // Small buffer for unknowns
+    total += unknowns * 0.15;
+    // Scale by servings baseline (assumes 2-serving baseline from generator)
+    const scale = Math.max(1, servings / 2);
+    total *= scale;
+    // Clamp and round to nearest $0.5
+    total = Math.max(2, Math.min(total, 30));
+    return Math.round(total * 2) / 2;
+  }, [dish.ingredients, servings]);
+
   // Abbreviate cuisine names to help keep the meta row to one line on mobile.
   const cuisineAbbrev = useMemo(() => {
     const raw = (dish.cuisine_type || '').trim();
@@ -160,10 +235,11 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle }: DishScore
             <View style={styles.metaRow}>
               <Text style={styles.cuisine} numberOfLines={1} ellipsizeMode="tail">{cuisineAbbrev}</Text>
               <View style={styles.timeContainer}>
-                <Clock size={14} color="#5A6C7D" />
-                <Text style={styles.time} numberOfLines={1} ellipsizeMode="clip">{dish.cooking_time}</Text>
+                <Clock size={14} color="#4ECDC4" />
+                <Text style={styles.time} numberOfLines={1} ellipsizeMode="clip">{dish.cooking_time || '—'}</Text>
               </View>
               <Text style={styles.calories} numberOfLines={1} ellipsizeMode="clip">~{caloriesEstimate} kcal</Text>
+              <Text style={styles.cost} numberOfLines={1} ellipsizeMode="clip">~${costEstimate.toFixed(2)}</Text>
             </View>
           </View>
           <TouchableOpacity
@@ -248,8 +324,10 @@ const styles = StyleSheet.create({
   calories: {
     marginLeft: 8,
     fontSize: 13,
-    color: '#5A6C7D',
-    fontWeight: '600',
+    color: '#4ECDC4',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   cuisine: {
     fontSize: 14,
@@ -265,8 +343,18 @@ const styles = StyleSheet.create({
   },
   time: {
     fontSize: 14,
-    color: '#5A6C7D',
-    fontWeight: '600',
+    color: '#4ECDC4',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  cost: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: '#4ECDC4',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   saveButton: {
     padding: 4,
