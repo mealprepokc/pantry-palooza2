@@ -38,6 +38,7 @@ export default function HomeScreen() {
   const [servings, setServings] = useState<number>(2);
   const [maxTime, setMaxTime] = useState<number | 'Any'>(30);
   const [mode, setMode] = useState<'strict'|'loose'>('strict');
+  const regenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadUserLibrary();
@@ -54,6 +55,20 @@ export default function HomeScreen() {
     if (any !== libraryAny) setLibraryAny(any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasonings.length, produce.length, proteins.length, pastas.length, equipment.length]);
+
+  // Auto-regenerate when servings changes and we already have a library
+  useEffect(() => {
+    if (!libraryAny) return;
+    if (loading) return;
+    if (regenTimer.current) clearTimeout(regenTimer.current);
+    regenTimer.current = setTimeout(() => {
+      generateDishes();
+    }, 250);
+    return () => {
+      if (regenTimer.current) clearTimeout(regenTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servings]);
 
   // Load when auth state resolves (user becomes available)
   useEffect(() => {

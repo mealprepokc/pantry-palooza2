@@ -330,11 +330,9 @@ export default function LibraryScreen() {
           onPress={async () => {
             try {
               setSaving(true);
-              // Ensure defaults are included if a section is empty at save time
-              const ensured = ensureDefaultsOnSave(data);
-              setData(ensured);
+              // Persist exactly what the user selected (allow empty sections)
               if (user) {
-                await safeUpsertLibrary(user.id, ensured);
+                await safeUpsertLibrary(user.id, data);
               }
               Alert.alert('Saved', 'Your Library has been saved.');
             } catch (e) {

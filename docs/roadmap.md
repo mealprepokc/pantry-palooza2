@@ -9,50 +9,62 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
 ---
 
 # Phase 1: Quick Wins (High impact, low effort)
-- [ ] Increase bottom bar size so icons/images are easier to see
+- [x] Increase bottom bar size so icons/images are easier to see
   - Impact: High
   - Effort: Easy
-  - Status: todo
+  - Status: done
   - Notes: Likely CSS/style tweak in web export and tab bar config.
 
-- [ ] When user clicks "Generate dishes", anchor to results or show a dedicated results screen
+- [x] When user clicks "Generate dishes", anchor to results or show a dedicated results screen
   - Impact: High
   - Effort: Easy
-  - Status: todo
+  - Status: done
   - Notes: Improves perceived speed; consider scrollIntoView or route push.
 
-- [ ] Add calorie count display to dishes (if available from source)
+- [x] Add calorie count display to dishes (if available from source)
   - Impact: Medium
   - Effort: Easy
-  - Status: todo
+  - Status: done
   - Notes: Use a fair estimate if exact value missing; label clearly (e.g., "~320 kcal").
 
-- [ ] Clarify max number of items allowed before generating dishes
+- [x] Clarify max number of items allowed before generating dishes
   - Impact: Medium
   - Effort: Easy
-  - Status: todo
+  - Status: done
   - Notes: Cap confirmed at 30. Show helper text when exceeded and disable generation.
 
-- [ ] Change "Entrees" label to "Proteins"
+- [x] Change "Entrees" label to "Proteins"
   - Impact: Medium
   - Effort: Easy
-  - Status: todo
+  - Status: done
   - Notes: Simple copy change in UI labels.
 
 - [ ] Print‑friendly mode and share links (basic version)
   - Impact: Medium
   - Effort: Easy
-  - Status: todo
-  - Notes: Add print stylesheet; share by copying current selection state as a querystring.
+  - Status: in_progress
+  - Notes: Share links implemented via querystring; Print triggers available. UI temporarily hidden; print stylesheet pending.
 
 ---
 
 # Phase 2: Core Improvements (Medium effort, strong UX gains)
-- [ ] Add serving size option (1–6) and scale generated dish results accordingly
+- [ ] Domain & DNS: choose TLD and set up site domain
   - Impact: High
   - Effort: Medium
   - Status: todo
-  - Notes: Impacts portions, shopping list quantities, nutrition.
+  - Notes: Decide TLD (e.g., pantrypalooza.app vs .com vs .ai). Register domain, add to Netlify, set DNS (A/ALIAS or Netlify-managed DNS), force HTTPS, configure apex ↔ www redirects, add analytics. .app enforces HSTS (HTTPS‑only) which is nice for security; .com is most familiar; .ai is trendy but pricier.
+
+- [x] Add serving size option (1–6) and scale generated dish results accordingly
+  - Impact: High
+  - Effort: Medium
+  - Status: done
+  - Notes: Implemented UI control and auto-regenerate on change; generator scales ingredients per servings.
+
+- [ ] Library favorites (tag items) + large-library hint
+  - Impact: Medium
+  - Effort: Medium
+  - Status: todo
+  - Notes: Let users mark favorite ingredients in Library. When Library is very large, hint to "Use favorites first". Does not cap Library size.
 
 - [ ] Smart shopping list: combine ingredient quantities across selected dishes, grouped by aisle
   - Impact: High
@@ -72,11 +84,11 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Status: todo
   - Notes: Validate and tag custom entries to improve future suggestions.
 
-- [ ] Breakfast/Lunch/Dinner selection to tailor results
+- [x] Breakfast/Lunch/Dinner selection to tailor results
   - Impact: Medium
   - Effort: Medium
-  - Status: todo
-  - Notes: Adds a meal‑type dimension to generation and shopping list.
+  - Status: done
+  - Notes: Prompt guidance added per meal type (breakfast/lunch/dinner) in edge function.
 
 - [ ] Weekly meal planner: pick 7 favorites and auto‑generate a weekly view
   - Impact: High
@@ -84,11 +96,11 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Status: todo
   - Notes: Persist selections; generate calendar/week layout.
 
-- [ ] Cost per serving estimate with total
+- [x] Cost per serving estimate with total
   - Impact: Medium
   - Effort: Medium
-  - Status: todo
-  - Notes: Use a simple price map per ingredient to start; refine later.
+  - Status: done
+  - Notes: Server-side cost estimation with ingredient parsing and price map; returns total_cost_usd and cost_per_serving_usd.
 
 - [ ] Publish/Share selected dishes via unique URL or JSON (enhanced)
   - Impact: Medium
@@ -102,6 +114,31 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Status: todo
   - Notes: Prod-only, privacy-safe defaults; add `SENTRY_DSN` in Netlify env; initialize early on web.
 
+## Phase 2 – Additional completed items
+- [x] Show prep time text next to clock icon
+  - Impact: Medium
+  - Effort: Easy
+  - Status: done
+  - Notes: Time displayed as "NN mins" alongside the icon.
+
+- [x] Ingredient measurements and units in generated results
+  - Impact: High
+  - Effort: Medium
+  - Status: done
+  - Notes: Prompt requires quantified ingredients (e.g., cups, tbsp, lb). Ensures scaling per servings.
+
+- [x] Increase generated dishes from 5 → 10
+  - Impact: Medium
+  - Effort: Easy
+  - Status: done
+  - Notes: Edge function returns exactly 10 dishes.
+
+- [x] Auto-regenerate on serving size change
+  - Impact: Medium
+  - Effort: Easy
+  - Status: done
+  - Notes: Debounced refresh when servings change and library present.
+
 ---
 
 # Phase 3: Advanced & Polish (Higher effort or scope)
@@ -114,8 +151,8 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
 - [ ] Strict vs. Loose results mode
   - Impact: Medium
   - Effort: Medium
-  - Status: todo
-  - Notes: Strict = only selected items; Loose = assume basic pantry staples.
+  - Status: in_progress
+  - Notes: Backend prompt supports strict/loose; expose/refine UX toggles and validations.
 
 - [ ] Appliance profile (user equipment)
   - Impact: Medium
@@ -140,6 +177,19 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Effort: Hard
   - Status: todo
   - Notes: Consider a separate data library or package if features diverge.
+
+- [ ] Dynamic pricing and regional cost accuracy
+  - Impact: High
+  - Effort: Medium‑Hard
+  - Status: todo
+  - Notes: Two paths:
+    1) Supabase table of commodity prices with scheduled updates (cron/Edge Functions). Localize by region/store; cache per user.
+    2) External APIs for live pricing (availability, auth, and ToS vary):
+       - PriceAPI (priceapi.com) for product price scraping/monitoring (paid).
+       - SerpApi (Google Shopping) for shopping results (paid; scraping-based; respect ToS).
+       - RapidAPI marketplace providers for grocery pricing (varied quality; vet carefully).
+       - Retailer APIs (Walmart, Kroger, Target) often require partner access and approvals.
+       Combine with fuzzy ingredient→SKU mapping and fallback to our internal price map.
 
 ---
 

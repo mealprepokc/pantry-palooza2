@@ -1,0 +1,20 @@
+﻿{
+  "envLoaded": true,
+  "url": "https://iqykqsjtelipuccimysu.supabase.co",
+  "tables": {
+    "user_library": {
+      "ok": true
+    },
+    "user_selections": {
+      "ok": true
+    }
+  },
+  "functions": {
+    "generate-dishes": {
+      "ok": true,
+      "sampleResponseKeys": [
+        "dishes"
+      ]
+    }
+  }
+}

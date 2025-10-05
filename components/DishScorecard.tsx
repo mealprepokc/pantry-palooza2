@@ -91,6 +91,13 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
 
   // Rough cost estimator ($) using common ingredient buckets.
   const costEstimate = useMemo(() => {
+    const anyDish: any = dish as any;
+    // Prefer API-provided numeric costs if present
+    const apiTotal = typeof anyDish.total_cost_usd === 'number' ? anyDish.total_cost_usd : undefined;
+    const apiPer = typeof anyDish.cost_per_serving_usd === 'number' ? anyDish.cost_per_serving_usd : undefined;
+    if (apiTotal != null) return apiTotal;
+    if (apiPer != null) return Math.max(0, apiPer * Math.max(1, servings));
+
     const priceMap: Record<string, number> = {
       // proteins (per serving approx)
       'Chicken Breast': 2.25,
@@ -158,8 +165,8 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
     // Scale by servings baseline (assumes 2-serving baseline from generator)
     const scale = Math.max(1, servings / 2);
     total *= scale;
-    // Clamp and round to nearest $0.5
-    total = Math.max(2, Math.min(total, 30));
+    // Clamp and round to nearest $0.5; single-dish ceiling can be higher for protein-heavy
+    total = Math.max(3, Math.min(total, 45));
     return Math.round(total * 2) / 2;
   }, [dish.ingredients, servings]);
 
@@ -239,7 +246,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
                 <Text style={styles.time} numberOfLines={1} ellipsizeMode="clip">{dish.cooking_time || '—'}</Text>
               </View>
               <Text style={styles.calories} numberOfLines={1} ellipsizeMode="clip">~{caloriesEstimate} kcal</Text>
-              <Text style={styles.cost} numberOfLines={1} ellipsizeMode="clip">~${costEstimate.toFixed(2)}</Text>
+              <Text style={styles.cost} numberOfLines={1} ellipsizeMode="clip">Approx ${costEstimate.toFixed(2)}</Text>
             </View>
           </View>
           <TouchableOpacity
