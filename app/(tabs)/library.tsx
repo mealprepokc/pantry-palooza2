@@ -262,20 +262,30 @@ export default function LibraryScreen() {
         {RENDER_KEYS.map((section) => (
           <View key={section} style={styles.section}>
             <Text style={styles.sectionTitle}>{section}</Text>
-            <View style={styles.itemsGrid}>
-              {uniqueSorted([...
+            {(() => {
+              const SECONDARY: (keyof typeof KNOWN_MAP)[] = ['Grains','Breads','Sauces/Condiments','Dairy','Non-Perishable Items'];
+              const isSecondary = (SECONDARY as string[]).includes(section as string);
+              const baseSelected = uniqueSorted([...(data[section] as string[]) || []]);
+              const mergedAll = uniqueSorted([...
                 (((DEFAULTS as any)[section] as string[]) || []),
                 ...((extras[section] as string[]) || []),
                 ...((data[section] as string[]) || []),
-              ]).map((item) => {
-                const selected = (data[section] || []).includes(item);
-                return (
-                  <TouchableOpacity key={item} style={[styles.itemChip, selected && styles.defaultChipSelected]} onPress={() => toggleSelectedChip(section, item)}>
-                    <Text style={[styles.itemText, selected && styles.defaultChipTextSelected]}>{item}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+              ]);
+              const displayList = isSecondary ? baseSelected : mergedAll;
+              if (displayList.length === 0) return null;
+              return (
+                <View style={styles.itemsGrid}>
+                  {displayList.map((item) => {
+                    const selected = (data[section] || []).includes(item);
+                    return (
+                      <TouchableOpacity key={item} style={[styles.itemChip, selected && styles.defaultChipSelected]} onPress={() => toggleSelectedChip(section, item)}>
+                        <Text style={[styles.itemText, selected && styles.defaultChipTextSelected]}>{item}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              );
+            })()}
 
             {/* Add more items */}
             <View style={styles.dropdownHeader}>
