@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Pressable, Alert, Platform, ToastAndroid } from 'react-native';
 import { GeneratedDish } from '@/types/database';
 import { BookmarkPlus, BookmarkCheck, Clock } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
@@ -212,6 +212,12 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
           }
         }
         setSaved(false);
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Removed from Saved', ToastAndroid.SHORT);
+        } else {
+          // keep it subtle on non-Android
+          Alert.alert('Removed', 'This dish was removed from your Saved list.');
+        }
       } else {
         const payload = {
           user_id: user.id,
@@ -227,6 +233,11 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
           return;
         }
         setSaved(true);
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Saved', ToastAndroid.SHORT);
+        } else {
+          Alert.alert('Saved', 'This dish was added to your Saved list.');
+        }
       }
 
       if (onSaveToggle) {
