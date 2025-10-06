@@ -31,7 +31,7 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Impact: Medium
   - Effort: Easy
   - Status: done
-  - Notes: Cap confirmed at 30. Show helper text when exceeded and disable generation.
+  - Notes: Cap confirmed at 100. Show helper text when exceeded and disable generation.
 
 - [x] Change "Entrees" label to "Proteins"
   - Impact: Medium
@@ -127,17 +127,71 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Status: done
   - Notes: Prompt requires quantified ingredients (e.g., cups, tbsp, lb). Ensures scaling per servings.
 
-- [x] Increase generated dishes from 5 → 10
+- [x] Increase generated dishes to 20
   - Impact: Medium
   - Effort: Easy
   - Status: done
-  - Notes: Edge function returns exactly 10 dishes.
+  - Notes: Edge function now returns exactly 20 dishes.
 
 - [x] Auto-regenerate on serving size change
   - Impact: Medium
   - Effort: Easy
   - Status: done
   - Notes: Debounced refresh when servings change and library present.
+
+- [x] Remove Max Prep Time control on Generate page (keep times on cards)
+  - Impact: Medium
+  - Effort: Easy
+  - Status: done
+  - Notes: Simplifies filters; edge function still supports time internally if re-enabled.
+
+- [x] Library tab icon updated to open‑book (brand)
+  - Impact: Low
+  - Effort: Easy
+  - Status: done
+  - Notes: New SVG icon added and wired in tab bar.
+
+- [x] Dish cards: Sides section sourced from Library (e.g., green beans, corn, salad, potatoes)
+  - Impact: Medium
+  - Effort: Medium
+  - Status: done
+  - Notes: Shows up to 3–5 suggested sides based on user's Produce.
+
+- [x] Saved tab: Collapsible rows with chevron
+  - Impact: Medium
+  - Effort: Medium
+  - Status: done
+  - Notes: One-line title row expands to reveal ingredients and instructions.
+
+- [x] Library polish: Hide selected from “Add more items” and de‑duplicate Produce
+  - Impact: Medium
+  - Effort: Easy
+  - Status: done
+  - Notes: Case/whitespace‑insensitive normalization for suggestions and more‑items lists.
+
+- [x] Library: Show only selected chips in main grid for all sections
+  - Impact: Medium
+  - Effort: Easy
+  - Status: done
+  - Notes: All other options appear under “Add more items”; if none selected, only “Add more items” is shown.
+
+- [x] Saved dishes backend: create table + RLS policies
+  - Impact: High
+  - Effort: Medium
+  - Status: done
+  - Notes: `public.saved_dishes` with insert/select/delete own-row RLS; unique (user_id, title).
+
+- [x] Auth: Magic-link callback handler and Expo deep-link scheme
+  - Impact: Medium
+  - Effort: Medium
+  - Status: done
+  - Notes: Route `/auth` exchanges code for session (web/native). Expo scheme set to `pantrypalooza`.
+
+- [x] Dish cards: Move cost to a dedicated line (APPROX COST)
+  - Impact: Low
+  - Effort: Easy
+  - Status: done
+  - Notes: Cost label/value rendered under the meta row for clarity.
 
 ---
 
