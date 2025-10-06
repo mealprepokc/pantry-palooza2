@@ -235,9 +235,20 @@ export default function LibraryScreen() {
     if (!q) return [] as string[];
     // include defaults for that section too
     const base = new Set([...(known || []), ...((DEFAULTS as any)[section] || [])]);
-    return Array.from(base)
-      .filter((k) => k.toLowerCase().includes(q))
-      .slice(0, 6);
+    const norm = (s: string) => (s || '').trim();
+    const selectedLower = new Set((data[section] || []).map((s) => norm(s).toLowerCase()));
+    const seenLower = new Set<string>();
+    const out: string[] = [];
+    for (const k of Array.from(base)) {
+      const lower = norm(k).toLowerCase();
+      if (!lower.includes(q)) continue;
+      if (selectedLower.has(lower)) continue; // hide if already selected
+      if (seenLower.has(lower)) continue; // de-dup
+      seenLower.add(lower);
+      out.push(capitalize(norm(k)));
+      if (out.length >= 6) break;
+    }
+    return out;
   };
 
   return (
@@ -435,15 +446,17 @@ function moreListFor(section: string, current: string[] = []) {
     ...(((KNOWN_MAP as any)[section] as string[]) || []),
     ...(((DEFAULTS as any)[section] as string[]) || []),
   ];
-  const selected = new Set((current || []).map(capitalize));
-  const seen = new Set<string>();
+  const norm = (s: string) => capitalize((s || '').trim());
+  const selectedLower = new Set((current || []).map((s) => norm(s).toLowerCase()));
+  const seenLower = new Set<string>();
   const out: string[] = [];
   for (const it of same) {
-    const c = capitalize(it);
-    if (!selected.has(c) && !seen.has(c)) {
-      seen.add(c);
-      out.push(c);
-    }
+    const c = norm(it);
+    const cl = c.toLowerCase();
+    if (selectedLower.has(cl)) continue; // hide if already selected
+    if (seenLower.has(cl)) continue; // de-dup
+    seenLower.add(cl);
+    out.push(c);
   }
   return out.slice(0, 30);
 }
