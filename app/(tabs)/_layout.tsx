@@ -1,5 +1,6 @@
 import { Tabs, Redirect } from 'expo-router';
-import { ChefHat, BookMarked, Book } from 'lucide-react-native';
+import { ChefHat, BookMarked } from 'lucide-react-native';
+import OpenBook from '@/assets/icons/OpenBook';
 import { useAuth } from '@/contexts/AuthContext';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
@@ -45,7 +46,7 @@ export default function TabLayout() {
         options={{
           title: 'Library',
           tabBarIcon: ({ size, color }) => (
-            <Book size={size} color={color} />
+            <OpenBook size={size} color={color} />
           ),
         }}
       />

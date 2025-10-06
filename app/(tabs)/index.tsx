@@ -36,7 +36,7 @@ export default function HomeScreen() {
   // Generate controls
   const [mealType, setMealType] = useState<'Breakfast'|'Lunch'|'Dinner'>('Dinner');
   const [servings, setServings] = useState<number>(2);
-  const [maxTime, setMaxTime] = useState<number | 'Any'>(30);
+  // Removed Max Prep Time control from UI; backend still supports it but we no longer send it.
   const [mode, setMode] = useState<'strict'|'loose'>('strict');
   const regenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -183,7 +183,7 @@ export default function HomeScreen() {
           filters: {
             mealType,
             servings,
-            maxTimeMinutes: maxTime === 'Any' ? null : maxTime,
+            // maxTimeMinutes removed from UI; not sent
             mode,
           },
         },
@@ -263,7 +263,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Pantry Palooza</Text>
-          <Text style={styles.headerSubtitle}>Choose meal type, time, and servings (uses your Library)</Text>
+          <Text style={styles.headerSubtitle}>Choose meal type and servings (uses your Library)</Text>
         </View>
         <TouchableOpacity onPress={signOut} style={styles.logoutButton}>
           <LogOut size={24} color="#666" />
@@ -302,16 +302,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.controlGroup}>
-          <Text style={styles.controlLabel}>Max Prep Time (minutes)</Text>
-          <View style={styles.segmentRow}>
-            {([15,30,45,60,'Any'] as const).map((t) => (
-              <TouchableOpacity key={String(t)} style={[styles.segment, maxTime===t && styles.segmentActive]} onPress={() => setMaxTime(t)}>
-                <Text style={[styles.segmentText, maxTime===t && styles.segmentTextActive]}>{String(t)}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+        {/* Max Prep Time control removed per request; times remain on cards */}
 
         <View style={styles.controlGroup}>
           <Text style={styles.controlLabel}>Dish Creation Mode</Text>
