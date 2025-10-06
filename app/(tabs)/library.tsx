@@ -263,26 +263,15 @@ export default function LibraryScreen() {
           <View key={section} style={styles.section}>
             <Text style={styles.sectionTitle}>{section}</Text>
             {(() => {
-              const SECONDARY: (keyof typeof KNOWN_MAP)[] = ['Grains','Breads','Sauces/Condiments','Dairy','Non-Perishable Items'];
-              const isSecondary = (SECONDARY as string[]).includes(section as string);
-              const baseSelected = uniqueSorted([...(data[section] as string[]) || []]);
-              const mergedAll = uniqueSorted([...
-                (((DEFAULTS as any)[section] as string[]) || []),
-                ...((extras[section] as string[]) || []),
-                ...((data[section] as string[]) || []),
-              ]);
-              const displayList = isSecondary ? baseSelected : mergedAll;
-              if (displayList.length === 0) return null;
+              const selectedOnly = uniqueSorted([...(data[section] as string[]) || []]);
+              if (selectedOnly.length === 0) return null;
               return (
                 <View style={styles.itemsGrid}>
-                  {displayList.map((item) => {
-                    const selected = (data[section] || []).includes(item);
-                    return (
-                      <TouchableOpacity key={item} style={[styles.itemChip, selected && styles.defaultChipSelected]} onPress={() => toggleSelectedChip(section, item)}>
-                        <Text style={[styles.itemText, selected && styles.defaultChipTextSelected]}>{item}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                  {selectedOnly.map((item) => (
+                    <TouchableOpacity key={item} style={[styles.itemChip, styles.defaultChipSelected]} onPress={() => toggleSelectedChip(section, item)}>
+                      <Text style={[styles.itemText, styles.defaultChipTextSelected]}>{item}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               );
             })()}
