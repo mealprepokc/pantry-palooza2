@@ -10,9 +10,10 @@ interface DishScorecardProps {
   isSaved?: boolean;
   onSaveToggle?: () => void;
   servings?: number;
+  suggestedSides?: string[];
 }
 
-export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 2 }: DishScorecardProps) {
+export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 2, suggestedSides = [] }: DishScorecardProps) {
   const { user } = useAuth();
   const [saved, setSaved] = useState(isSaved);
   const [saving, setSaving] = useState(false);
@@ -242,7 +243,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
             <View style={styles.metaRow}>
               <Text style={styles.cuisine} numberOfLines={1} ellipsizeMode="tail">{cuisineAbbrev}</Text>
               <View style={styles.timeContainer}>
-                <Clock size={14} color="#4ECDC4" />
+                <Clock size={12} color="#4ECDC4" />
                 <Text style={styles.time} numberOfLines={1} ellipsizeMode="clip">{dish.cooking_time || '—'}</Text>
               </View>
               <Text style={styles.calories} numberOfLines={1} ellipsizeMode="clip">~{caloriesEstimate} kcal</Text>
@@ -274,6 +275,19 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
             ))}
           </View>
         </View>
+
+        {suggestedSides.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Sides</Text>
+            <View style={styles.sidesRow}>
+              {suggestedSides.slice(0, 5).map((side) => (
+                <View key={side} style={styles.sideChip}>
+                  <Text style={styles.sideChipText}>{side}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Instructions</Text>
@@ -325,43 +339,48 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 8,
     flexWrap: 'nowrap',
+    overflow: 'hidden',
   },
   calories: {
-    marginLeft: 8,
-    fontSize: 13,
+    marginLeft: 6,
+    fontSize: 12,
     color: '#4ECDC4',
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
+    flexShrink: 1,
   },
   cuisine: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#4ECDC4',
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    flexShrink: 1,
   },
   timeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
   },
   time: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#4ECDC4',
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
+    flexShrink: 1,
   },
   cost: {
-    marginLeft: 8,
-    fontSize: 13,
+    marginLeft: 6,
+    fontSize: 12,
     color: '#4ECDC4',
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
+    flexShrink: 0,
   },
   saveButton: {
     padding: 4,
@@ -375,6 +394,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#2C3E50',
     marginBottom: 12,
+  },
+  sidesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  sideChip: {
+    borderWidth: 1,
+    borderColor: '#E1E8ED',
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  sideChipText: {
+    color: '#2C3E50',
+    fontSize: 13,
+    fontWeight: '600',
   },
   ingredientsList: {
     gap: 6,

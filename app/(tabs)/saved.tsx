@@ -6,18 +6,19 @@ import {
   ScrollView,
   ActivityIndicator,
   SafeAreaView,
+  TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { SavedDish } from '@/types/database';
-import { DishScorecard } from '@/components/DishScorecard';
-import { BookMarked } from 'lucide-react-native';
+import { BookMarked, ChevronDown, ChevronRight, Clock } from 'lucide-react-native';
 
 export default function SavedScreen() {
   const { user } = useAuth();
   const [savedDishes, setSavedDishes] = useState<SavedDish[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const loadSavedDishes = async () => {
     if (!user) return;
@@ -69,20 +70,54 @@ export default function SavedScreen() {
         </View>
       ) : (
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-          {savedDishes.map((dish) => (
-            <DishScorecard
-              key={dish.id}
-              dish={{
-                title: dish.title,
-                cuisine_type: dish.cuisine_type,
-                image_url: dish.image_url,
-                ingredients: dish.ingredients as string[],
-                instructions: dish.instructions,
-              }}
-              isSaved={true}
-              onSaveToggle={loadSavedDishes}
-            />
-          ))}
+          {savedDishes.map((dish) => {
+            const isOpen = !!expanded[dish.id];
+            const toggle = () => setExpanded((e) => ({ ...e, [dish.id]: !e[dish.id] }));
+            const ings = Array.isArray(dish.ingredients) ? (dish.ingredients as string[]) : [];
+            return (
+              <View key={dish.id} style={styles.item}>
+                <TouchableOpacity onPress={toggle} style={styles.itemHeader}>
+                  <View style={styles.itemTitleRow}>
+                    {isOpen ? (
+                      <ChevronDown size={20} color="#2C3E50" />
+                    ) : (
+                      <ChevronRight size={20} color="#2C3E50" />
+                    )}
+                    <Text style={styles.itemTitle} numberOfLines={1} ellipsizeMode="tail">{dish.title}</Text>
+                  </View>
+                  <View style={styles.itemMetaRow}>
+                    {!!dish.cuisine_type && (
+                      <Text style={styles.itemMeta} numberOfLines={1}>{dish.cuisine_type}</Text>
+                    )}
+                    {!!dish.cooking_time && (
+                      <View style={styles.itemTime}>
+                        <Clock size={12} color="#4ECDC4" />
+                        <Text style={styles.itemMeta} numberOfLines={1}>{dish.cooking_time}</Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+                {isOpen && (
+                  <View style={styles.itemBody}>
+                    {ings.length > 0 && (
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Ingredients</Text>
+                        {ings.map((ing, idx) => (
+                          <Text key={idx} style={styles.sectionText}>• {ing}</Text>
+                        ))}
+                      </View>
+                    )}
+                    {!!dish.instructions && (
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Instructions</Text>
+                        <Text style={styles.sectionText}>{dish.instructions}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+            );
+          })}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -141,6 +176,69 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+    lineHeight: 20,
+  },
+  item: {
+    borderWidth: 2,
+    borderColor: '#E1E8ED',
+    borderRadius: 14,
+    backgroundColor: '#FFF',
+    marginBottom: 14,
+    overflow: 'hidden',
+  },
+  itemHeader: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  itemTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    paddingRight: 8,
+  },
+  itemTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2C3E50',
+  },
+  itemMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  itemMeta: {
+    fontSize: 12,
+    color: '#4ECDC4',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  itemTime: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  itemBody: {
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  section: {
+    marginTop: 8,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#2C3E50',
+    marginBottom: 6,
+  },
+  sectionText: {
+    fontSize: 14,
+    color: '#2C3E50',
     lineHeight: 20,
   },
 });

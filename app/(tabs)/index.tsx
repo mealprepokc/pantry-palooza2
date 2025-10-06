@@ -341,9 +341,20 @@ export default function HomeScreen() {
             onLayout={(e) => setDishesOffsetY(e.nativeEvent.layout.y)}
           >
             <Text style={styles.dishesTitle}>Your Personalized Dishes</Text>
-            {generatedDishes.map((dish, index) => (
-              <DishScorecard key={index} dish={dish} servings={servings} />
-            ))}
+            {generatedDishes.map((dish, index) => {
+              const sidesCatalog = ['Green Beans','Corn','Salad','Mixed Greens','Potatoes','Mashed Potatoes','Sweet Potatoes','Side Salad'];
+              const libLower = new Set(produce.map((p) => (p || '').toLowerCase()));
+              const suggestedSides = sidesCatalog.filter((s) => {
+                const key = s.toLowerCase();
+                if (key.includes('salad')) return libLower.has('lettuce') || libLower.has('spinach') || libLower.has('mixed greens');
+                if (key.includes('potato')) return Array.from(libLower).some((x) => x.includes('potato'));
+                if (key.includes('green beans')) return Array.from(libLower).some((x) => x.includes('green bean'));
+                return libLower.has(key);
+              });
+              return (
+                <DishScorecard key={index} dish={dish} servings={servings} suggestedSides={suggestedSides} />
+              );
+            })}
           </View>
         )}
       </ScrollView>
