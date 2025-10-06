@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Pressable, Alert } from 'react-native';
 import { GeneratedDish } from '@/types/database';
 import { BookmarkPlus, BookmarkCheck, Clock } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
@@ -185,7 +185,10 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
   }, [dish.cuisine_type]);
 
   const handleSave = async () => {
-    if (!user) return;
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to save dishes.');
+      return;
+    }
 
     setSaving(true);
 
@@ -199,21 +202,30 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
           .maybeSingle();
 
         if (existingDish) {
-          await supabase
+          const { error: delErr } = await supabase
             .from('saved_dishes')
             .delete()
             .eq('id', existingDish.id);
+          if (delErr) {
+            Alert.alert('Error', delErr.message || 'Could not remove saved dish.');
+            return;
+          }
         }
         setSaved(false);
       } else {
-        await supabase.from('saved_dishes').insert({
+        const payload = {
           user_id: user.id,
-          title: dish.title,
-          cuisine_type: dish.cuisine_type,
-          cooking_time: dish.cooking_time,
-          ingredients: dish.ingredients,
-          instructions: dish.instructions,
-        });
+          title: String(dish.title || '').trim(),
+          cuisine_type: String(dish.cuisine_type || ''),
+          cooking_time: String(dish.cooking_time || '30 mins'),
+          ingredients: Array.isArray(dish.ingredients) ? dish.ingredients : [],
+          instructions: String(dish.instructions || ''),
+        } as any;
+        const { error: insErr } = await supabase.from('saved_dishes').insert(payload);
+        if (insErr) {
+          Alert.alert('Save failed', insErr.message || 'Could not save this dish.');
+          return;
+        }
         setSaved(true);
       }
 
@@ -221,7 +233,8 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
         onSaveToggle();
       }
     } catch (error) {
-      console.error('Error saving dish:', error);
+      const msg = (error as any)?.message || 'Unexpected error while saving.';
+      Alert.alert('Save failed', msg);
     } finally {
       setSaving(false);
     }
@@ -247,7 +260,10 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
                 <Text style={styles.time} numberOfLines={1} ellipsizeMode="clip">{dish.cooking_time || '—'}</Text>
               </View>
               <Text style={styles.calories} numberOfLines={1} ellipsizeMode="clip">~{caloriesEstimate} kcal</Text>
-              <Text style={styles.cost} numberOfLines={1} ellipsizeMode="clip">Approx ${costEstimate.toFixed(2)}</Text>
+            </View>
+            <View style={styles.costRow}>
+              <Text style={styles.costLabel}>APPROX COST</Text>
+              <Text style={styles.costValue}>${costEstimate.toFixed(2)}</Text>
             </View>
           </View>
           <TouchableOpacity
@@ -343,6 +359,23 @@ const styles = StyleSheet.create({
     flexWrap: 'nowrap',
     overflow: 'hidden',
   },
+  costRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  costLabel: {
+    fontSize: 11,
+    color: '#4ECDC4',
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  costValue: {
+    fontSize: 13,
+    color: '#2C3E50',
+    fontWeight: '800',
+  },
   calories: {
     marginLeft: 6,
     fontSize: 12,
@@ -372,15 +405,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.3,
     flexShrink: 1,
-  },
-  cost: {
-    marginLeft: 6,
-    fontSize: 12,
-    color: '#4ECDC4',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-    flexShrink: 0,
   },
   saveButton: {
     padding: 4,
