@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import type { DietaryPrefs } from '@/lib/dietary';
+import { router } from 'expo-router';
 
 const ALL_FLAGS: Array<{ key: keyof DietaryPrefs; label: string }> = [
   { key: 'vegan', label: 'Vegan' },
@@ -95,6 +96,14 @@ export default function AccountScreen() {
         <TouchableOpacity style={[styles.primary, saving && { opacity: 0.7 }]} disabled={saving} onPress={save}>
           <Text style={styles.primaryText}>{saving ? 'Saving…' : 'Save Preferences'}</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.secondary} onPress={() => router.push('/cooked' as any)}>
+          <Text style={styles.secondaryText}>View Cooked Dishes</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.secondary} onPress={() => router.push('/shopping-list' as any)}>
+          <Text style={styles.secondaryText}>View Shopping List</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -111,4 +120,6 @@ const styles = StyleSheet.create({
   helper: { color: '#5A6C7D', fontSize: 12, marginTop: 6 },
   primary: { backgroundColor: '#4ECDC4', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 6 },
   primaryText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+  secondary: { borderWidth: 2, borderColor: '#E1E8ED', backgroundColor: '#FFF', paddingVertical: 12, borderRadius: 12, alignItems: 'center', marginTop: 12 },
+  secondaryText: { color: '#2C3E50', fontSize: 15, fontWeight: '700' },
 });
