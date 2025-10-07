@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Pressable, Alert, Platform, ToastAndroid } from 'react-native';
 import { GeneratedDish } from '@/types/database';
-import { BookmarkPlus, BookmarkCheck, Clock } from 'lucide-react-native';
+import { BookmarkPlus, BookmarkCheck, Clock, Utensils } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -17,6 +17,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
   const { user } = useAuth();
   const [saved, setSaved] = useState(isSaved);
   const [saving, setSaving] = useState(false);
+  const [cooking, setCooking] = useState(false);
   const [pressed, setPressed] = useState(false);
 
   // Very lightweight calorie estimator. This is intentionally simple and conservative.
@@ -50,6 +51,53 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
       'Butter': 100,
       'Cheese': 110,
     };
+
+  const handleCooked = async () => {
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to mark dishes as cooked.');
+      return;
+    }
+    try {
+      setCooking(true);
+      // Insert cooked row with snapshot estimates
+      const payload: any = {
+        user_id: user.id,
+        title: String(dish.title || '').trim(),
+        cuisine_type: String(dish.cuisine_type || ''),
+        cooking_time: String(dish.cooking_time || ''),
+        ingredients: Array.isArray(dish.ingredients) ? dish.ingredients : [],
+        instructions: String(dish.instructions || ''),
+        calories_est: caloriesEstimate,
+        cost_est: Number(costEstimate.toFixed(2)),
+      };
+      const { error: cookErr } = await supabase.from('cooked_dishes').insert(payload);
+      if (cookErr) {
+        Alert.alert('Error', cookErr.message || 'Could not mark as cooked.');
+        return;
+      }
+      // If this dish exists in saved_dishes, remove it
+      const { data: existingDish } = await supabase
+        .from('saved_dishes')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('title', dish.title)
+        .maybeSingle();
+      if (existingDish) {
+        await supabase.from('saved_dishes').delete().eq('id', existingDish.id);
+        setSaved(false);
+      }
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Marked as cooked', ToastAndroid.SHORT);
+      } else {
+        Alert.alert('Cooked', 'Dish marked as cooked.');
+      }
+      if (onSaveToggle) onSaveToggle();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to mark as cooked.');
+    } finally {
+      setCooking(false);
+    }
+  };
 
     // Tally known ingredients and lightly account for unknowns
     let total = 0;
@@ -277,19 +325,32 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
               <Text style={styles.costValue}>${costEstimate.toFixed(2)}</Text>
             </View>
           </View>
-          <TouchableOpacity
-            onPress={handleSave}
-            disabled={saving}
-            style={styles.saveButton}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color="#4ECDC4" />
-            ) : saved ? (
-              <BookmarkCheck size={28} color="#4ECDC4" fill="#4ECDC4" />
-            ) : (
-              <BookmarkPlus size={28} color="#4ECDC4" />
-            )}
-          </TouchableOpacity>
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              onPress={handleCooked}
+              disabled={cooking}
+              style={styles.actionBtn}
+            >
+              {cooking ? (
+                <ActivityIndicator size="small" color="#4ECDC4" />
+              ) : (
+                <Utensils size={24} color="#4ECDC4" />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSave}
+              disabled={saving}
+              style={styles.actionBtn}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color="#4ECDC4" />
+              ) : saved ? (
+                <BookmarkCheck size={28} color="#4ECDC4" fill="#4ECDC4" />
+              ) : (
+                <BookmarkPlus size={28} color="#4ECDC4" />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -417,10 +478,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     flexShrink: 1,
   },
-  saveButton: {
-    padding: 4,
-    marginLeft: 12,
-  },
+  actionsRow: { flexDirection: 'row', gap: 8, marginLeft: 8 },
+  actionBtn: { padding: 4 },
   section: {
     marginBottom: 20,
   },
