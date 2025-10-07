@@ -220,6 +220,12 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Status: done
   - Notes: Installed `@vercel/analytics` and mounted `<Analytics />` for production web. Guarded with platform/env checks.
 
+- [x] Cooked dishes table + screen
+  - Impact: Medium
+  - Effort: Medium
+  - Status: done
+  - Notes: Added `cooked_dishes` migration, applied via CLI, and deployed new `/cooked` summary screen.
+
 - [ ] Analytics: Google Tag Manager + GA4 (web; native later)
   - Impact: Medium
   - Effort: Easy
