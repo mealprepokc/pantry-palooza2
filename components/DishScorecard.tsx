@@ -1,9 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Pressable, Alert, Platform, ToastAndroid } from 'react-native';
 import { GeneratedDish } from '@/types/database';
-import { BookmarkPlus, BookmarkCheck, Clock, Utensils } from 'lucide-react-native';
+import { BookmarkPlus, BookmarkCheck, Clock, Utensils, Download } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { captureRef } from 'react-native-view-shot';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
 
 interface DishScorecardProps {
   dish: GeneratedDish;
@@ -19,6 +22,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
   const [saving, setSaving] = useState(false);
   const [cooking, setCooking] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const cardRef = useRef<View>(null);
 
   // Very lightweight calorie estimator. This is intentionally simple and conservative.
   const caloriesEstimate = useMemo(() => {
@@ -52,63 +56,11 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
       'Cheese': 110,
     };
 
-  const handleCooked = async () => {
-    if (!user) {
-      Alert.alert('Sign in required', 'Please sign in to mark dishes as cooked.');
-      return;
-    }
-    try {
-      setCooking(true);
-      // Insert cooked row with snapshot estimates
-      const payload: any = {
-        user_id: user.id,
-        title: String(dish.title || '').trim(),
-        cuisine_type: String(dish.cuisine_type || ''),
-        cooking_time: String(dish.cooking_time || ''),
-        ingredients: Array.isArray(dish.ingredients) ? dish.ingredients : [],
-        instructions: String(dish.instructions || ''),
-        calories_est: caloriesEstimate,
-        cost_est: Number(costEstimate.toFixed(2)),
-      };
-      const { error: cookErr } = await supabase.from('cooked_dishes').insert(payload);
-      if (cookErr) {
-        Alert.alert('Error', cookErr.message || 'Could not mark as cooked.');
-        return;
-      }
-      // If this dish exists in saved_dishes, remove it
-      const { data: existingDish } = await supabase
-        .from('saved_dishes')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('title', dish.title)
-        .maybeSingle();
-      if (existingDish) {
-        await supabase.from('saved_dishes').delete().eq('id', existingDish.id);
-        setSaved(false);
-      }
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Marked as cooked', ToastAndroid.SHORT);
-      } else {
-        Alert.alert('Cooked', 'Dish marked as cooked.');
-      }
-      if (onSaveToggle) onSaveToggle();
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to mark as cooked.');
-    } finally {
-      setCooking(false);
-    }
-  };
-
     // Tally known ingredients and lightly account for unknowns
     let total = 0;
     let unknowns = 0;
     for (const ing of dish.ingredients) {
-      // try exact match first
-      if (baseMap[ing]) {
-        total += baseMap[ing];
-        continue;
-      }
-      // fuzzy contains for common buckets
+      if (baseMap[ing]) { total += baseMap[ing]; continue; }
       const key = ing.toLowerCase();
       if (key.includes('chicken')) total += baseMap['Chicken Breast'];
       else if (key.includes('beef')) total += baseMap['Ground Beef'];
@@ -131,11 +83,11 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
     }
 
     // Add a small buffer for unknowns
-    total += unknowns * 20; // 20 kcal per unknown ingredient as a mild estimate
+    total += unknowns * 20;
 
     // Clamp to reasonable range for a single-serving dish
     total = Math.max(150, Math.min(total, 900));
-    return Math.round(total / 10) * 10; // round to nearest 10
+    return Math.round(total / 10) * 10;
   }, [dish.ingredients]);
 
   // Rough cost estimator ($) using common ingredient buckets.
@@ -219,6 +171,66 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
     return Math.round(total * 2) / 2;
   }, [dish.ingredients, servings]);
 
+  // Download PNG (native) or placeholder on web
+  const handleDownload = async () => {
+    try {
+      if (Platform.OS === 'web') {
+        Alert.alert('Download', 'Web export coming soon. For now, use your browser print/share.');
+        return;
+      }
+      const uri = await captureRef(cardRef, { format: 'png', quality: 1 } as any);
+      const perm = await MediaLibrary.requestPermissionsAsync();
+      if (perm.granted) {
+        await MediaLibrary.saveToLibraryAsync(uri);
+        if (Platform.OS === 'android') ToastAndroid.show('Saved to Photos', ToastAndroid.SHORT);
+        else Alert.alert('Saved', 'Image saved to your Photos.');
+      } else if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri);
+      } else {
+        Alert.alert('Saved', 'Image is ready at: ' + uri);
+      }
+    } catch (e: any) {
+      Alert.alert('Download failed', e?.message || 'Unable to export image');
+    }
+  };
+
+  // Mark as cooked and migrate from Saved to Cooked
+  const handleCooked = async () => {
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to mark dishes as cooked.');
+      return;
+    }
+    try {
+      setCooking(true);
+      const payload: any = {
+        user_id: user.id,
+        title: String(dish.title || '').trim(),
+        cuisine_type: String(dish.cuisine_type || ''),
+        cooking_time: String(dish.cooking_time || ''),
+        ingredients: Array.isArray(dish.ingredients) ? dish.ingredients : [],
+        instructions: String(dish.instructions || ''),
+        calories_est: caloriesEstimate,
+        cost_est: Number(costEstimate.toFixed(2)),
+      };
+      const { error: cookErr } = await supabase.from('cooked_dishes').insert(payload);
+      if (cookErr) { Alert.alert('Error', cookErr.message || 'Could not mark as cooked.'); return; }
+      const { data: existingDish } = await supabase
+        .from('saved_dishes')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('title', dish.title)
+        .maybeSingle();
+      if (existingDish) { await supabase.from('saved_dishes').delete().eq('id', existingDish.id); setSaved(false); }
+      if (Platform.OS === 'android') ToastAndroid.show('Marked as cooked', ToastAndroid.SHORT);
+      else Alert.alert('Cooked', 'Dish marked as cooked.');
+      if (onSaveToggle) onSaveToggle();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to mark as cooked.');
+    } finally {
+      setCooking(false);
+    }
+  };
+
   // Abbreviate cuisine names to help keep the meta row to one line on mobile.
   const cuisineAbbrev = useMemo(() => {
     const raw = (dish.cuisine_type || '').trim();
@@ -298,17 +310,13 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
       setSaving(false);
     }
   };
-
   return (
     <Pressable
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
-      style={[
-        styles.card,
-        pressed && styles.cardPressed,
-      ]}
+      style={({ pressed: pr }) => [styles.card, (pr || pressed) && styles.cardPressed]}
     >
-      <View style={styles.content}>
+      <View style={styles.content} ref={cardRef as any}>
         <View style={styles.header}>
           <View style={styles.titleContainer}>
             <Text style={styles.title}>{dish.title}</Text>
@@ -326,22 +334,13 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
             </View>
           </View>
           <View style={styles.actionsRow}>
-            <TouchableOpacity
-              onPress={handleCooked}
-              disabled={cooking}
-              style={styles.actionBtn}
-            >
-              {cooking ? (
-                <ActivityIndicator size="small" color="#4ECDC4" />
-              ) : (
-                <Utensils size={24} color="#4ECDC4" />
-              )}
+            <TouchableOpacity onPress={handleCooked} disabled={cooking} style={styles.actionBtn}>
+              {cooking ? <ActivityIndicator size="small" color="#4ECDC4" /> : <Utensils size={24} color="#4ECDC4" />}
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleSave}
-              disabled={saving}
-              style={styles.actionBtn}
-            >
+            <TouchableOpacity onPress={handleDownload} style={styles.actionBtn}>
+              <Download size={22} color="#4ECDC4" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleSave} disabled={saving} style={styles.actionBtn}>
               {saving ? (
                 <ActivityIndicator size="small" color="#4ECDC4" />
               ) : saved ? (
@@ -357,9 +356,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
           <Text style={styles.sectionTitle}>Ingredients</Text>
           <View style={styles.ingredientsList}>
             {dish.ingredients.map((ingredient, index) => (
-              <Text key={index} style={styles.ingredient}>
-                • {ingredient}
-              </Text>
+              <Text key={index} style={styles.ingredient}>• {ingredient}</Text>
             ))}
           </View>
         </View>

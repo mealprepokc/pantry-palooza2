@@ -28,6 +28,7 @@ export default function AccountScreen() {
   const [strictMode, setStrictMode] = useState(false);
   const [dietary, setDietary] = useState<DietaryPrefs>({});
   const [saving, setSaving] = useState(false);
+  const [shoppingMissingCount, setShoppingMissingCount] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -41,6 +42,35 @@ export default function AccountScreen() {
         setStrictMode(!!data.strict_mode);
         setDietary((data.dietary as DietaryPrefs) || {});
       }
+    })();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const [{ data: saved }, { data: lib }] = await Promise.all([
+        supabase.from('saved_dishes').select('ingredients').eq('user_id', user.id),
+        supabase.from('user_library').select('*').eq('user_id', user.id).maybeSingle(),
+      ]);
+      const library = (lib as any) || {};
+      const libSet = new Set<string>();
+      Object.values(library).forEach((arr: any) => {
+        if (Array.isArray(arr)) arr.forEach((x: string) => libSet.add(String(x || '').trim().toLowerCase()));
+      });
+      const norm = (s: string) => String(s || '').trim().toLowerCase();
+      const simpleMatch = (a: string, b: string) => {
+        const aa = norm(a).replace(/s\b/, '');
+        const bb = norm(b).replace(/s\b/, '');
+        return aa === bb || aa.includes(bb) || bb.includes(aa);
+      };
+      const needed = new Set<string>();
+      (saved as any[] || []).forEach((row) => {
+        (row.ingredients || []).forEach((ing: string) => {
+          const inLib = Array.from(libSet).some((l) => simpleMatch(ing, l));
+          if (!inLib) needed.add(ing);
+        });
+      });
+      setShoppingMissingCount(needed.size);
     })();
   }, [user?.id]);
 
@@ -102,7 +132,15 @@ export default function AccountScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.secondary} onPress={() => router.push('/shopping-list' as any)}>
-          <Text style={styles.secondaryText}>View Shopping List</Text>
+          <Text style={styles.secondaryText}>View Shopping List{shoppingMissingCount > 0 ? ` (${shoppingMissingCount})` : ''}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.secondary} onPress={() => router.push('/subscriptions' as any)}>
+          <Text style={styles.secondaryText}>Subscriptions</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.secondary} onPress={() => router.push('/faq' as any)}>
+          <Text style={styles.secondaryText}>FAQ</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
