@@ -1,6 +1,7 @@
 import { Tabs, Redirect } from 'expo-router';
 import { ChefHat, BookMarked } from 'lucide-react-native';
 import OpenBook from '@/assets/icons/OpenBook';
+import AccountIcon from '@/assets/icons/Account';
 import { useAuth } from '@/contexts/AuthContext';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
@@ -65,6 +66,15 @@ export default function TabLayout() {
           title: 'Saved',
           tabBarIcon: ({ size, color }) => (
             <BookMarked size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="account"
+        options={{
+          title: 'Account',
+          tabBarIcon: ({ size, color }) => (
+            <AccountIcon size={size} color={color} />
           ),
         }}
       />
