@@ -208,6 +208,12 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Status: in_progress
   - Notes: Backend prompt supports strict/loose; expose/refine UX toggles and validations.
 
+- [ ] Analytics: Google Tag Manager + GA4 (web; native later)
+  - Impact: Medium
+  - Effort: Easy
+  - Status: todo
+  - Notes: Add GTM container to Expo web shell and configure GA4 tag. Track custom events (generate_clicked, dish_saved, dish_unsaved, library_item_added) via dataLayer; add GA4 native SDK later for iOS/Android if desired.
+
 - [ ] Appliance profile (user equipment)
   - Impact: Medium
   - Effort: Medium
