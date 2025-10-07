@@ -1,15 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Tabs, Redirect } from 'expo-router';
 import { ChefHat, BookMarked } from 'lucide-react-native';
 import OpenBook from '@/assets/icons/OpenBook';
 import AccountIcon from '@/assets/icons/Account';
 import { useAuth } from '@/contexts/AuthContext';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Platform, ToastAndroid, Alert } from 'react-native';
 import { supabase } from '@/lib/supabase';
 
 export default function TabLayout() {
   const { user, loading } = useAuth();
   const [shoppingBadge, setShoppingBadge] = useState(0);
+  const prevBadgeRef = useRef<number>(0);
+  const shownIncreaseRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (!user) {
@@ -39,7 +41,18 @@ export default function TabLayout() {
           if (!inLib) needed.add(ing);
         });
       });
-      setShoppingBadge(needed.size);
+      const nextCount = needed.size;
+      // One-time toast when badge increases compared to previous
+      if (!shownIncreaseRef.current && nextCount > prevBadgeRef.current) {
+        shownIncreaseRef.current = true;
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('New items added to your Shopping List', ToastAndroid.SHORT);
+        } else {
+          Alert.alert('Shopping List Updated', 'New items added to your Shopping List.');
+        }
+      }
+      prevBadgeRef.current = nextCount;
+      setShoppingBadge(nextCount);
     };
     load();
 

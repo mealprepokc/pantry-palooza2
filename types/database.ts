@@ -19,6 +19,7 @@ export interface SavedDish {
   ingredients: string[];
   instructions: string;
   created_at: string;
+  servings?: number | null;
 }
 
 export interface GeneratedDish {
@@ -27,4 +28,5 @@ export interface GeneratedDish {
   cooking_time: string;
   ingredients: string[];
   instructions: string;
+  servings?: number | null;
 }

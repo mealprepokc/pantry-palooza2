@@ -62,13 +62,14 @@ Deno.serve(async (req: Request) => {
       ? `Lunch guidance: Aim for balanced, portable or quick dishes (salads, bowls, sandwiches, wraps, pastas). Use produce heavily; proteins can be lighter. Avoid heavy dinner-style stews unless clearly lunch-appropriate.`
       : `Dinner guidance: Heartier mains welcome. Favor proteins with sides, pastas, grains. Depth of flavor (roasting, searing, sauces) is encouraged while respecting the time constraint.`;
 
-    const prompt = `You are a creative chef AI. Generate exactly 20 unique and delicious ${mealType.toLowerCase()} dish ideas based on the following. Prioritize using the provided ingredients list.\n\nAvailable Ingredients: ${ingredientsList}\nAvailable Equipment: ${equipmentList || 'Any'}\nServings: ${servings}\n${timeNote}\n${strictnessNote}\n${mealGuidance}\n\nFor each dish, provide:\n1. A creative and appetizing dish title\n2. The cuisine type (e.g., Italian, Asian, Mexican, American, Mediterranean)\n3. Approximate cooking time formatted strictly as "NN mins" (numeric minutes only, e.g., "20 mins", "45 mins")\n4. A complete list of ingredients with MEASUREMENTS and UNITS, scaled for ${servings} servings (e.g., "2 cups chopped spinach", "1 lb chicken breast", "1 tbsp olive oil") while respecting the strictness rule\n5. Detailed step-by-step preparation and cooking instructions\n\nReturn the response as a JSON array with exactly 20 dishes. Each dish should have this structure:\n{\n  "title": "Dish Name",\n  "cuisine_type": "Cuisine Type",\n  "cooking_time": "30 mins",\n  "ingredients": ["2 cups ...", "1 lb ...", ...],\n  "instructions": "Detailed step-by-step instructions..."\n}\n\nMake sure the dishes are creative, practical, and use the available equipment when relevant. Include cooking temperatures where relevant.`;
+    const prompt = `You are a creative chef AI. Generate exactly 15 unique and delicious ${mealType.toLowerCase()} dish ideas based on the following. Prioritize using the provided ingredients list.
+\n\nAvailable Ingredients: ${ingredientsList}\nAvailable Equipment: ${equipmentList || 'Any'}\nServings: ${servings}\n${timeNote}\n${strictnessNote}\n${mealGuidance}\n\nFor each dish, provide:\n1. A creative and appetizing dish title\n2. The cuisine type (e.g., Italian, Asian, Mexican, American, Mediterranean)\n3. Approximate cooking time formatted strictly as "NN mins" (numeric minutes only, e.g., "20 mins", "45 mins")\n4. A complete list of ingredients with MEASUREMENTS and UNITS, scaled for ${servings} servings (e.g., "2 cups chopped spinach", "1 lb chicken breast", "1 tbsp olive oil") while respecting the strictness rule\n5. Detailed step-by-step preparation and cooking instructions\n\nReturn the response as a JSON array with exactly 15 dishes. Each dish should have this structure:
+\n{\n  "title": "Dish Name",\n  "cuisine_type": "Cuisine Type",\n  "cooking_time": "30 mins",\n  "ingredients": ["2 cups ...", "1 lb ...", ...],\n  "instructions": "Detailed step-by-step instructions..."\n}\n\nMake sure the dishes are creative, practical, and use the available equipment when relevant. Include cooking temperatures where relevant.`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiApiKey}`,
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
@@ -214,9 +215,14 @@ Deno.serve(async (req: Request) => {
         const total = lines.reduce((sum, line) => sum + estimateLineCost(String(line)), 0);
         const servingsNum = typeof servings === 'number' && servings > 0 ? servings : 2;
         const per = total / servingsNum;
-        return { ...d, total_cost_usd: Math.round(total * 100) / 100, cost_per_serving_usd: Math.round(per * 100) / 100 };
+        return {
+          ...d,
+          total_cost_usd: Math.round(total * 100) / 100,
+          cost_per_serving_usd: Math.round(per * 100) / 100,
+          servings: servingsNum,
+        };
       } catch (_) {
-        return d;
+        return { ...d, servings };
       }
     });
 

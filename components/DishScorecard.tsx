@@ -1,12 +1,160 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Pressable, Alert, Platform, ToastAndroid } from 'react-native';
 import { GeneratedDish } from '@/types/database';
-import { BookmarkPlus, BookmarkCheck, Clock, Utensils, Download } from 'lucide-react-native';
+import { BookmarkPlus, BookmarkCheck, Clock, ChefHat } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { captureRef } from 'react-native-view-shot';
-import * as MediaLibrary from 'expo-media-library';
-import * as Sharing from 'expo-sharing';
+
+
+interface ParsedIngredient {
+  original: string;
+  baseText: string;
+  quantity: number | null;
+  unit: string | null;
+  descriptor: string;
+  normalized: string;
+}
+
+const CANDIDATE_KEYS = ['name', 'ingredient', 'label', 'text', 'title', 'value', 'content'] as const;
+const UNIT_REGEX = /^(cups?|cup|tablespoons?|tbsp|teaspoons?|tsp|oz|ounce|ounces?|grams?|g|ml|milliliters?|l|liters?|lbs?|pounds?|kg|kilograms?|cloves?|cans?|pieces?|slices?|heads?|bunch(?:es)?|sticks?|pinch|dash|sprigs?|ears?|fillets?|filets?|packages?|pkgs?|bags?|handfuls?|bunches?|links?|strips?|stalks?|leaves?)/i;
+
+function stringifyIngredient(raw: any): string {
+  if (raw == null) return '';
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'object') {
+    for (const key of CANDIDATE_KEYS) {
+      if (typeof (raw as any)[key] === 'string') {
+        return String((raw as any)[key]);
+      }
+    }
+    try {
+      return JSON.stringify(raw);
+    } catch (_) {
+      return '';
+    }
+  }
+  return String(raw ?? '');
+}
+
+function parseQuantity(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(/\s+/);
+  let total = 0;
+  let parsed = false;
+  for (const part of parts) {
+    if (!part) continue;
+    if (part.includes('/')) {
+      const [num, den] = part.split('/').map((x) => Number(x));
+      if (!Number.isNaN(num) && !Number.isNaN(den) && den !== 0) {
+        total += num / den;
+        parsed = true;
+      }
+    } else if (!Number.isNaN(Number(part))) {
+      total += Number(part);
+      parsed = true;
+    }
+  }
+  return parsed ? total : null;
+}
+
+function normalizeIngredientName(value: string): string {
+  const withoutBullet = value.replace(/^[•\-*\s]+/, '').trim();
+  const withoutQty = withoutBullet
+    .replace(/^[\d\s\/.,-]+(cups?|cup|tablespoons?|tbsp|teaspoons?|tsp|oz|ounce|ounces?|grams?|g|ml|milliliters?|l|liters?|lbs?|pounds?|kg|kilograms?|pinch|cloves?)?\.?\s*/i, '')
+    .trim();
+  return withoutQty;
+}
+
+function parseIngredientLine(raw: any): ParsedIngredient {
+  const original = stringifyIngredient(raw).trim();
+  const baseText = original.replace(/^[•\-*\s]+/, '').trim();
+  const quantityMatch = baseText.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+\.\d+|\d+)/);
+  let quantity: number | null = null;
+  let cursor = 0;
+  if (quantityMatch) {
+    quantity = parseQuantity(quantityMatch[0]);
+    cursor = quantityMatch[0].length;
+  }
+
+  let remainder = baseText.slice(cursor).trim();
+  let unit: string | null = null;
+  if (remainder) {
+    const unitMatch = remainder.match(UNIT_REGEX);
+    if (unitMatch) {
+      unit = unitMatch[0];
+      remainder = remainder.slice(unitMatch[0].length).trim();
+    }
+  }
+
+  const descriptor = remainder;
+  const normalized = normalizeIngredientName(baseText);
+  return { original, baseText, quantity, unit, descriptor, normalized };
+}
+
+function gcd(a: number, b: number): number {
+  let x = Math.abs(a);
+  let y = Math.abs(b);
+  while (y !== 0) {
+    const temp = y;
+    y = x % y;
+    x = temp;
+  }
+  return x || 1;
+}
+
+function formatQuantity(value: number): string {
+  if (!Number.isFinite(value)) return '';
+  const abs = Math.abs(value);
+  if (abs < 0.01) return '0';
+
+  const whole = Math.floor(abs);
+  const fraction = abs - whole;
+  let fractionStr = '';
+  const denominators = [8, 6, 4, 3, 2];
+  for (const denom of denominators) {
+    const numerator = Math.round(fraction * denom);
+    if (numerator === 0) continue;
+    const approx = numerator / denom;
+    if (Math.abs(fraction - approx) <= 0.015) {
+      const divisor = gcd(numerator, denom);
+      const simpleNum = numerator / divisor;
+      const simpleDen = denom / divisor;
+      fractionStr = `${simpleNum}/${simpleDen}`;
+      break;
+    }
+  }
+
+  const sign = value < 0 ? '-' : '';
+  let result = '';
+  if (whole > 0) {
+    result = `${whole}`;
+  }
+  if (fractionStr) {
+    result = result ? `${result} ${fractionStr}` : fractionStr;
+  }
+  if (!result) {
+    const decimals = abs >= 10 ? 0 : abs >= 3 ? 1 : 2;
+    result = (Math.round(abs * Math.pow(10, decimals)) / Math.pow(10, decimals)).toString();
+  }
+  return sign + result;
+}
+
+function formatScaledIngredient(item: ParsedIngredient, scale: number): string {
+  if (!item.baseText) return '';
+  if (item.quantity == null || !Number.isFinite(item.quantity)) return item.baseText;
+  if (Math.abs(scale - 1) < 0.01) return item.baseText;
+
+  const scaledQuantity = item.quantity * scale;
+  if (!Number.isFinite(scaledQuantity) || scaledQuantity <= 0) return item.baseText;
+
+  const quantityText = formatQuantity(scaledQuantity);
+  if (!quantityText) return item.baseText;
+  const unitText = item.unit ? ` ${item.unit}` : '';
+  const descriptorText = item.descriptor ? ` ${item.descriptor}` : '';
+  const combined = `${quantityText}${unitText}${descriptorText}`.trim();
+  return combined || item.baseText;
+}
 
 interface DishScorecardProps {
   dish: GeneratedDish;
@@ -21,8 +169,78 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
   const [saved, setSaved] = useState(isSaved);
   const [saving, setSaving] = useState(false);
   const [cooking, setCooking] = useState(false);
+  const [cookedState, setCookedState] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const cardRef = useRef<View>(null);
+
+  const parsedIngredients = useMemo<ParsedIngredient[]>(() => {
+    const source = Array.isArray(dish.ingredients) ? dish.ingredients : [];
+    return source
+      .map((item) => parseIngredientLine(item))
+      .filter((parsed) => parsed.baseText.length > 0);
+  }, [dish.ingredients]);
+
+  const normalizedIngredients = useMemo<string[]>(() => {
+    const seen = new Set<string>();
+    return parsedIngredients
+      .map((item) => item.normalized.replace(/^[•\-*\s]+/, '').trim())
+      .filter((ingredient) => {
+        if (!ingredient) return false;
+        const lower = ingredient.toLowerCase();
+        if (seen.has(lower)) return false;
+        seen.add(lower);
+        return true;
+      });
+  }, [parsedIngredients]);
+
+  const baseServings = useMemo(() => {
+    if (typeof dish.servings === 'number' && dish.servings > 0) return dish.servings;
+    return servings > 0 ? servings : 1;
+  }, [dish.servings, servings]);
+
+  const scaleRatio = useMemo(() => {
+    if (!baseServings || baseServings <= 0) return 1;
+    return servings / baseServings;
+  }, [baseServings, servings]);
+
+  const scaledIngredients = useMemo<string[]>(() => {
+    return parsedIngredients.map((item) => formatScaledIngredient(item, scaleRatio));
+  }, [parsedIngredients, scaleRatio]);
+
+  const instructionsText = useMemo<string>(() => {
+    const raw = (dish as any)?.instructions;
+    if (!raw) return '';
+    const toLines = (value: any): string[] => {
+      if (!value) return [];
+      if (Array.isArray(value)) {
+        return value
+          .flatMap((entry) => toLines(entry))
+          .filter((line) => typeof line === 'string' && line.trim().length > 0);
+      }
+      if (typeof value === 'string') {
+        return value
+          .split(/\r?\n+/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+      }
+      if (typeof value === 'object') {
+        if (typeof (value as any).text === 'string') {
+          return toLines((value as any).text);
+        }
+        if (Array.isArray((value as any).steps)) {
+          return toLines((value as any).steps);
+        }
+        try {
+          const json = JSON.stringify(value);
+          return json ? toLines(json) : [];
+        } catch (_) {
+          return [];
+        }
+      }
+      return [String(value)];
+    };
+
+    return toLines(raw).join('\n');
+  }, [dish.instructions]);
 
   // Very lightweight calorie estimator. This is intentionally simple and conservative.
   const caloriesEstimate = useMemo(() => {
@@ -59,7 +277,8 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
     // Tally known ingredients and lightly account for unknowns
     let total = 0;
     let unknowns = 0;
-    for (const ing of dish.ingredients) {
+    const arr = normalizedIngredients;
+    for (const ing of arr) {
       if (baseMap[ing]) { total += baseMap[ing]; continue; }
       const key = ing.toLowerCase();
       if (key.includes('chicken')) total += baseMap['Chicken Breast'];
@@ -88,7 +307,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
     // Clamp to reasonable range for a single-serving dish
     total = Math.max(150, Math.min(total, 900));
     return Math.round(total / 10) * 10;
-  }, [dish.ingredients]);
+  }, [normalizedIngredients]);
 
   // Rough cost estimator ($) using common ingredient buckets.
   const costEstimate = useMemo(() => {
@@ -133,7 +352,8 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
 
     let total = 0;
     let unknowns = 0;
-    for (const ing of dish.ingredients) {
+    const arr = normalizedIngredients;
+    for (const ing of arr) {
       if (priceMap[ing]) {
         total += priceMap[ing];
         continue;
@@ -162,37 +382,30 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
     }
 
     // Small buffer for unknowns
-    total += unknowns * 0.15;
+    total += unknowns * 0.3;
     // Scale by servings baseline (assumes 2-serving baseline from generator)
     const scale = Math.max(1, servings / 2);
     total *= scale;
-    // Clamp and round to nearest $0.5; single-dish ceiling can be higher for protein-heavy
-    total = Math.max(3, Math.min(total, 45));
+    // Add typical pantry/condiment tax for sauce-heavy dishes
+    total += Math.min(4, 0.75 * servings);
+    // Inflation bump for 2025 grocery prices
+    total *= 1.18;
+    // Clamp and round to nearest $0.5; higher ceiling for premium ingredients
+    total = Math.max(4, Math.min(total, 68));
     return Math.round(total * 2) / 2;
-  }, [dish.ingredients, servings]);
+  }, [normalizedIngredients, servings, dish]);
 
-  // Download PNG (native) or placeholder on web
-  const handleDownload = async () => {
-    try {
-      if (Platform.OS === 'web') {
-        Alert.alert('Download', 'Web export coming soon. For now, use your browser print/share.');
-        return;
-      }
-      const uri = await captureRef(cardRef, { format: 'png', quality: 1 } as any);
-      const perm = await MediaLibrary.requestPermissionsAsync();
-      if (perm.granted) {
-        await MediaLibrary.saveToLibraryAsync(uri);
-        if (Platform.OS === 'android') ToastAndroid.show('Saved to Photos', ToastAndroid.SHORT);
-        else Alert.alert('Saved', 'Image saved to your Photos.');
-      } else if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri);
-      } else {
-        Alert.alert('Saved', 'Image is ready at: ' + uri);
-      }
-    } catch (e: any) {
-      Alert.alert('Download failed', e?.message || 'Unable to export image');
-    }
-  };
+  const restaurantCostEstimate = useMemo(() => {
+    if (!costEstimate || Number.isNaN(costEstimate)) return null;
+    const baseline = Math.max(costEstimate * 3.6, costEstimate + 24);
+    return Math.round(baseline * 2) / 2;
+  }, [costEstimate]);
+
+  const savingsEstimate = useMemo(() => {
+    if (!restaurantCostEstimate) return null;
+    const diff = Math.max(0, restaurantCostEstimate - costEstimate);
+    return Math.round(diff * 100) / 100;
+  }, [restaurantCostEstimate, costEstimate]);
 
   // Mark as cooked and migrate from Saved to Cooked
   const handleCooked = async () => {
@@ -207,10 +420,12 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
         title: String(dish.title || '').trim(),
         cuisine_type: String(dish.cuisine_type || ''),
         cooking_time: String(dish.cooking_time || ''),
-        ingredients: Array.isArray(dish.ingredients) ? dish.ingredients : [],
+        ingredients: scaledIngredients,
         instructions: String(dish.instructions || ''),
         calories_est: caloriesEstimate,
         cost_est: Number(costEstimate.toFixed(2)),
+        restaurant_cost_est: restaurantCostEstimate != null ? Number(restaurantCostEstimate.toFixed(2)) : null,
+        savings_est: savingsEstimate != null ? Number(savingsEstimate.toFixed(2)) : null,
       };
       const { error: cookErr } = await supabase.from('cooked_dishes').insert(payload);
       if (cookErr) { Alert.alert('Error', cookErr.message || 'Could not mark as cooked.'); return; }
@@ -221,6 +436,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
         .eq('title', dish.title)
         .maybeSingle();
       if (existingDish) { await supabase.from('saved_dishes').delete().eq('id', existingDish.id); setSaved(false); }
+      setCookedState(true);
       if (Platform.OS === 'android') ToastAndroid.show('Marked as cooked', ToastAndroid.SHORT);
       else Alert.alert('Cooked', 'Dish marked as cooked.');
       if (onSaveToggle) onSaveToggle();
@@ -284,7 +500,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
           title: String(dish.title || '').trim(),
           cuisine_type: String(dish.cuisine_type || ''),
           cooking_time: String(dish.cooking_time || '30 mins'),
-          ingredients: Array.isArray(dish.ingredients) ? dish.ingredients : [],
+          ingredients: scaledIngredients,
           instructions: String(dish.instructions || ''),
         } as any;
         const { error: insErr } = await supabase.from('saved_dishes').insert(payload);
@@ -316,7 +532,7 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
       onPressOut={() => setPressed(false)}
       style={({ pressed: pr }) => [styles.card, (pr || pressed) && styles.cardPressed]}
     >
-      <View style={styles.content} ref={cardRef as any}>
+      <View style={styles.content}>
         <View style={styles.header}>
           <View style={styles.titleContainer}>
             <Text style={styles.title}>{dish.title}</Text>
@@ -332,13 +548,27 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
               <Text style={styles.costLabel}>APPROX COST</Text>
               <Text style={styles.costValue}>${costEstimate.toFixed(2)}</Text>
             </View>
+            {restaurantCostEstimate ? (
+              <View style={styles.savingsRow}>
+                <Text style={styles.savingsLabel}>VS OUT / DELIVERY</Text>
+                <Text style={styles.savingsValue}>${restaurantCostEstimate.toFixed(2)}</Text>
+                {savingsEstimate ? (
+                  <Text style={styles.savingsChip}>SAVE ${savingsEstimate.toFixed(2)}</Text>
+                ) : null}
+              </View>
+            ) : null}
           </View>
           <View style={styles.actionsRow}>
-            <TouchableOpacity onPress={handleCooked} disabled={cooking} style={styles.actionBtn}>
-              {cooking ? <ActivityIndicator size="small" color="#4ECDC4" /> : <Utensils size={24} color="#4ECDC4" />}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleDownload} style={styles.actionBtn}>
-              <Download size={22} color="#4ECDC4" />
+            <TouchableOpacity
+              onPress={handleCooked}
+              disabled={cooking || cookedState}
+              style={[styles.actionBtn, styles.cookedBtn, cookedState && styles.cookedBtnActive]}
+            >
+              {cooking ? (
+                <ActivityIndicator size="small" color={cookedState ? '#FFF' : '#4ECDC4'} />
+              ) : (
+                <ChefHat size={24} color={cookedState ? '#FFF' : '#4ECDC4'} />
+              )}
             </TouchableOpacity>
             <TouchableOpacity onPress={handleSave} disabled={saving} style={styles.actionBtn}>
               {saving ? (
@@ -351,21 +581,25 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
             </TouchableOpacity>
           </View>
         </View>
-
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Ingredients</Text>
           <View style={styles.ingredientsList}>
-            {dish.ingredients.map((ingredient, index) => (
-              <Text key={index} style={styles.ingredient}>• {ingredient}</Text>
+            {scaledIngredients.map((ingredient, index) => (
+              <Text key={`${index}-${ingredient}`} style={styles.ingredient}>• {ingredient}</Text>
             ))}
           </View>
         </View>
-
-        {suggestedSides.length > 0 && (
+        {!!instructionsText && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Sides</Text>
+            <Text style={styles.sectionTitle}>Instructions</Text>
+            <Text style={styles.instructions}>{instructionsText}</Text>
+          </View>
+        )}
+        {!!suggestedSides.length && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Suggested Sides</Text>
             <View style={styles.sidesRow}>
-              {suggestedSides.slice(0, 5).map((side) => (
+              {suggestedSides.map((side) => (
                 <View key={side} style={styles.sideChip}>
                   <Text style={styles.sideChipText}>{side}</Text>
                 </View>
@@ -373,11 +607,6 @@ export function DishScorecard({ dish, isSaved = false, onSaveToggle, servings = 
             </View>
           </View>
         )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Instructions</Text>
-          <Text style={styles.instructions}>{dish.instructions}</Text>
-        </View>
       </View>
     </Pressable>
   );
@@ -445,6 +674,33 @@ const styles = StyleSheet.create({
     color: '#2C3E50',
     fontWeight: '800',
   },
+  savingsRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  savingsLabel: {
+    fontSize: 11,
+    color: '#FF6B35',
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  savingsValue: {
+    fontSize: 13,
+    color: '#2C3E50',
+    fontWeight: '800',
+  },
+  savingsChip: {
+    marginLeft: 'auto',
+    backgroundColor: '#FFEEE2',
+    color: '#FF6B35',
+    fontSize: 12,
+    fontWeight: '800',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
   calories: {
     marginLeft: 6,
     fontSize: 12,
@@ -477,6 +733,19 @@ const styles = StyleSheet.create({
   },
   actionsRow: { flexDirection: 'row', gap: 8, marginLeft: 8 },
   actionBtn: { padding: 4 },
+  cookedBtn: {
+    borderWidth: 2,
+    borderColor: '#4ECDC4',
+    borderRadius: 12,
+    padding: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  cookedBtnActive: {
+    backgroundColor: '#4ECDC4',
+    borderColor: '#2B8F87',
+  },
   section: {
     marginBottom: 20,
   },

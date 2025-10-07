@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { router } from 'expo-router';
 
 interface SavedDishRow {
   id: string;
@@ -31,6 +32,15 @@ function simpleMatch(a: string, b: string) {
   const aa = norm(a).replace(/s\b/, '');
   const bb = norm(b).replace(/s\b/, '');
   return aa === bb || aa.includes(bb) || bb.includes(aa);
+}
+
+function stripMeasurement(ing: string): string {
+  if (!ing) return '';
+  const withoutBullet = ing.replace(/^[•\-*\s]+/, '').trim();
+  const cleaned = withoutBullet
+    .replace(/^[\d\s\/.,-]+(cups?|cup|tablespoons?|tbsp|teaspoons?|tsp|oz|ounce|ounces?|grams?|g|ml|milliliters?|l|liters?|lbs?|pounds?|kg|kilograms?|pinch|cloves?|cans?|pieces?|slices?|heads?|bunch(?:es)?|sticks?|dash|sprigs?|ears?|fillets?|filets?|packages?|pkgs?|bags?|handfuls?|bunches?|links?|strips?|stalks?|leaves?)?\.?\s*/i, '')
+    .trim();
+  return cleaned || withoutBullet || ing;
 }
 
 function groupFor(ing: string): string {
@@ -66,8 +76,9 @@ export default function ShoppingListScreen() {
       const needed = new Set<string>();
       (saved as SavedDishRow[] || []).forEach((row) => {
         (row.ingredients || []).forEach((ing) => {
+          const normalized = stripMeasurement(ing);
           const inLib = Array.from(libSet).some((l) => simpleMatch(ing, l));
-          if (!inLib) needed.add(ing);
+          if (!inLib) needed.add(normalized);
         });
       });
       const grouped: Record<string, string[]> = {};
@@ -96,6 +107,9 @@ export default function ShoppingListScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Text style={styles.backText}>Back</Text>
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Shopping List</Text>
         <Text style={styles.headerSubtitle}>Items required by your Saved dishes but not in your Library.</Text>
         {groups.length === 0 ? (
@@ -127,6 +141,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF' },
   centerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF' },
   content: { padding: 20 },
+  backBtn: { alignSelf: 'flex-start', borderWidth: 2, borderColor: '#E1E8ED', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, marginBottom: 10, backgroundColor: '#FFF' },
+  backText: { color: '#2C3E50', fontWeight: '700' },
   headerTitle: { fontSize: 24, fontWeight: '800', color: '#2C3E50' },
   headerSubtitle: { fontSize: 14, color: '#5A6C7D', marginTop: 2 },
   empty: { alignItems: 'center', marginTop: 28 },

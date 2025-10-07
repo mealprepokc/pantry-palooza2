@@ -88,7 +88,7 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Impact: Medium
   - Effort: Medium
   - Status: done
-  - Notes: Prompt guidance added per meal type (breakfast/lunch/dinner) in edge function.
+  - Notes: Prompt guidance plus client-side heuristics now prioritize time-of-day fits; edge function returns 15 dishes for faster results.
 
 - [ ] Weekly meal planner: pick 7 favorites and auto‑generate a weekly view
   - Impact: High
@@ -155,7 +155,7 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Impact: Medium
   - Effort: Medium
   - Status: done
-  - Notes: Shows up to 3–5 suggested sides based on user's Produce.
+  - Notes: Shows up to 3–5 suggested sides based on user's Produce; sides now always treated as loose recommendations.
 
 - [x] Saved tab: Collapsible rows with chevron
   - Impact: Medium
@@ -206,7 +206,7 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Impact: Medium
   - Effort: Medium
   - Status: in_progress
-  - Notes: Backend prompt supports strict/loose; expose/refine UX toggles and validations.
+  - Notes: Prompt definitions updated; sides remain loose. Need final UX for toggles and educational copy before marking done.
 
 - [ ] Analytics: Google Tag Manager + GA4 (web; native later)
   - Impact: Medium

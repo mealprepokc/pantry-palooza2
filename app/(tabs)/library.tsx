@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SEASONINGS, VEGETABLES, ENTREES, PASTAS, EQUIPMENT } from '@/constants/ingredients';
-import { isIngredientAllowed, type DietaryPrefs } from '@/lib/dietary';
+import { isIngredientAllowed, sanitizeDietaryPrefs, type DietaryPrefs } from '@/lib/dietary';
+import { useFocusEffect } from '@react-navigation/native';
 
 // Library screen MVP: manage user's ingredient library with simple add/remove and type-ahead suggestions.
 
@@ -124,7 +125,7 @@ export default function LibraryScreen() {
           .select('dietary')
           .eq('user_id', user.id)
           .maybeSingle();
-        if (prefs && prefs.dietary) setDietary(prefs.dietary as DietaryPrefs);
+        if (prefs && prefs.dietary) setDietary(sanitizeDietaryPrefs(prefs.dietary));
       } catch (_) {
         // ignore; default empty
       }

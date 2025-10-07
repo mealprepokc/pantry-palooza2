@@ -12,13 +12,102 @@ import { Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '@/lib/supabase';
+import { isIngredientAllowed, type DietaryPrefs } from '@/lib/dietary';
 import { useAuth } from '@/contexts/AuthContext';
 import { GeneratedDish } from '@/types/database';
 import { DishScorecard } from '@/components/DishScorecard';
-import { LogOut } from 'lucide-react-native';
+
+type MealType = 'Breakfast' | 'Lunch' | 'Dinner';
+
+const AGGREGATE = (dish: GeneratedDish) => {
+  const parts: string[] = [];
+  if (dish.title) parts.push(dish.title);
+  if (dish.instructions) parts.push(dish.instructions);
+  if (Array.isArray(dish.ingredients)) parts.push(dish.ingredients.join(' '));
+  return parts.join(' ').toLowerCase();
+};
+
+const parseMinutes = (value: string | null | undefined): number | null => {
+  if (!value) return null;
+  const match = value.match(/\d+/);
+  return match ? Number(match[0]) : null;
+};
+
+const MEAL_HEURISTICS: Record<MealType, { primary: string[]; bonus: string[]; avoid: string[]; }> = {
+  Breakfast: {
+    primary: ['breakfast', 'omelet', 'oatmeal', 'pancake', 'waffle', 'toast', 'scramble', 'smoothie', 'granola', 'parfait'],
+    bonus: ['egg', 'yogurt', 'berry', 'fruit', 'hash', 'frittata', 'bagel', 'muffin', 'overnight oats'],
+    avoid: ['steak', 'roast', 'pork chop', 'brisket', 'lasagna', 'curry', 'barbecue', 'bbq', 'ribs', 'meatloaf', 'burger', 'pizza'],
+  },
+  Lunch: {
+    primary: ['salad', 'sandwich', 'wrap', 'bowl', 'grain bowl', 'taco', 'quesadilla', 'panini', 'soup', 'pasta', 'noodle'],
+    bonus: ['lunch', 'quick', 'portable', 'flatbread', 'pita', 'rice bowl', 'poke', 'grain'],
+    avoid: ['pancake', 'waffle', 'french toast', 'smoothie', 'oatmeal', 'overnight oats', 'cereal', 'parfait'],
+  },
+  Dinner: {
+    primary: ['dinner', 'roast', 'stew', 'casserole', 'pasta', 'braised', 'grilled', 'sheet pan', 'skillet', 'slow cooker', 'baked', 'stir fry'],
+    bonus: ['hearty', 'comfort', 'family', 'weeknight', 'garlic', 'herb', 'pan-seared', 'glazed'],
+    avoid: ['pancake', 'waffle', 'smoothie', 'oatmeal', 'breakfast', 'parfait', 'cereal', 'toast'],
+  },
+};
+
+const scoreMealFit = (dish: GeneratedDish, mealType: MealType): number => {
+  const heuristics = MEAL_HEURISTICS[mealType];
+  if (!heuristics) return 0;
+  const text = AGGREGATE(dish);
+  let score = 0;
+
+  heuristics.primary.forEach((term) => {
+    if (text.includes(term)) score += 3;
+  });
+
+  heuristics.bonus.forEach((term) => {
+    if (text.includes(term)) score += 1.5;
+  });
+
+  heuristics.avoid.forEach((term) => {
+    if (text.includes(term)) score -= 4;
+  });
+
+  const minutes = parseMinutes(dish.cooking_time);
+  if (minutes != null) {
+    if (mealType === 'Breakfast') {
+      if (minutes <= 25) score += 1.5;
+      if (minutes >= 50) score -= 1;
+    } else if (mealType === 'Dinner') {
+      if (minutes >= 30) score += 1;
+      if (minutes <= 15) score -= 1;
+    }
+  }
+
+  if (Array.isArray(dish.ingredients)) {
+    const ingredientsText = dish.ingredients.join(' ').toLowerCase();
+    if (mealType === 'Breakfast' && ingredientsText.includes('maple')) score += 1;
+    if (mealType === 'Dinner' && ingredientsText.includes('slow cooker')) score += 1.5;
+  }
+
+  return score;
+};
+
+const applyMealTypeHeuristics = (dishes: GeneratedDish[], mealType: MealType): GeneratedDish[] => {
+  if (!Array.isArray(dishes) || dishes.length === 0) return dishes;
+  const scored = dishes.map((dish, index) => ({ dish, index, score: scoreMealFit(dish, mealType) }));
+  const hasVariance = scored.some((entry) => entry.score !== scored[0]?.score);
+  if (!hasVariance) return dishes;
+
+  const sorted = [...scored].sort((a, b) => {
+    const diff = b.score - a.score;
+    if (Math.abs(diff) > 0.0001) return diff;
+    return a.index - b.index;
+  });
+
+  const culled = sorted.filter((entry, idx) => entry.score > -3 || idx < 8);
+  const prioritized = (culled.length > 0 ? culled : sorted).map((entry) => entry.dish);
+  return prioritized;
+};
 
 export default function HomeScreen() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   // Library-backed selections
   const [seasonings, setSeasonings] = useState<string[]>([]);
   const [produce, setProduce] = useState<string[]>([]);
@@ -34,11 +123,12 @@ export default function HomeScreen() {
   const [shareMsg, setShareMsg] = useState('');
   const qs = useLocalSearchParams();
   // Generate controls
-  const [mealType, setMealType] = useState<'Breakfast'|'Lunch'|'Dinner'>('Dinner');
+  const [mealType, setMealType] = useState<MealType>('Dinner');
   const [servings, setServings] = useState<number>(4);
   // Removed Max Prep Time control from UI; backend still supports it but we no longer send it.
   const [strictMode, setStrictMode] = useState<boolean>(false);
   const regenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [dietary, setDietary] = useState<DietaryPrefs>({});
 
   useEffect(() => {
     loadUserLibrary();
@@ -78,10 +168,11 @@ export default function HomeScreen() {
       (async () => {
         const { data } = await supabase
           .from('account_prefs')
-          .select('strict_mode')
+          .select('strict_mode, dietary')
           .eq('user_id', user.id)
           .maybeSingle();
         if (data && typeof data.strict_mode === 'boolean') setStrictMode(!!data.strict_mode);
+        if (data && data.dietary) setDietary(data.dietary as DietaryPrefs);
       })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,6 +285,7 @@ export default function HomeScreen() {
             servings,
             // maxTimeMinutes removed from UI; not sent
             mode: strictMode ? 'strict' : 'loose',
+            dietary,
           },
         },
       });
@@ -206,7 +298,15 @@ export default function HomeScreen() {
         throw new Error(data.error);
       }
 
-      setGeneratedDishes(data.dishes);
+      // Client-side dietary filter as enforcement safeguard
+      const filtered = Array.isArray(data?.dishes)
+        ? data.dishes.filter((d: any) => {
+            const ings: string[] = Array.isArray(d.ingredients) ? d.ingredients : [];
+            return ings.every((ing) => isIngredientAllowed(String(ing), dietary));
+          })
+        : [];
+      const adjusted = applyMealTypeHeuristics(filtered, mealType);
+      setGeneratedDishes(adjusted);
     } catch (err) {
       setError('Failed to generate dishes. Please try again.');
       console.error(err);
@@ -274,9 +374,6 @@ export default function HomeScreen() {
           <Text style={styles.headerTitle}>Pantry Palooza</Text>
           <Text style={styles.headerSubtitle}>Choose meal type and servings (uses your Library)</Text>
         </View>
-        <TouchableOpacity onPress={signOut} style={styles.logoutButton}>
-          <LogOut size={24} color="#666" />
-        </TouchableOpacity>
       </View>
 
       <ScrollView ref={scrollRef} style={styles.scrollView} contentContainerStyle={styles.content}>
@@ -339,17 +436,18 @@ export default function HomeScreen() {
           >
             <Text style={styles.dishesTitle}>Your Personalized Dishes</Text>
             {generatedDishes.map((dish, index) => {
-              const sidesCatalog = ['Green Beans','Corn','Salad','Mixed Greens','Potatoes','Mashed Potatoes','Sweet Potatoes','Side Salad'];
-              const libLower = new Set(produce.map((p) => (p || '').toLowerCase()));
-              const suggestedSides = sidesCatalog.filter((s) => {
-                const key = s.toLowerCase();
-                if (key.includes('salad')) return libLower.has('lettuce') || libLower.has('spinach') || libLower.has('mixed greens');
-                if (key.includes('potato')) return Array.from(libLower).some((x) => x.includes('potato'));
-                if (key.includes('green beans')) return Array.from(libLower).some((x) => x.includes('green bean'));
-                return libLower.has(key);
-              });
+              const sidesCatalog = [
+                'Mixed Greens Salad',
+                'Garlic Bread',
+                'Roasted Vegetables',
+                'Herbed Rice',
+                'Quinoa Pilaf',
+                'Sweet Potato Mash',
+                'Grilled Asparagus',
+                'Sauteed Green Beans',
+              ];
               return (
-                <DishScorecard key={index} dish={dish} servings={servings} suggestedSides={suggestedSides} />
+                <DishScorecard key={index} dish={dish} servings={servings} suggestedSides={sidesCatalog} />
               );
             })}
           </View>

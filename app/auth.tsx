@@ -42,7 +42,7 @@ export default function AuthScreen() {
           setError(exErr.message);
           Alert.alert('Sign-in error', exErr.message);
         } else {
-          router.replace('/(tabs)');
+          router.replace('/(tabs)/account');
         }
       } catch (e: any) {
         const msg = e?.message || 'Failed to complete sign-in.';
@@ -87,7 +87,7 @@ export default function AuthScreen() {
       setError(authError.message);
       Alert.alert('Authentication error', authError.message);
     } else {
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/account');
     }
   };
 
