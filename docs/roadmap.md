@@ -226,6 +226,12 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Status: done
   - Notes: Added `cooked_dishes` migration, applied via CLI, and deployed new `/cooked` summary screen.
 
+- [x] Vercel Speed Insights
+  - Impact: Medium
+  - Effort: Easy
+  - Status: done
+  - Notes: Installed `@vercel/speed-insights` and render `<SpeedInsights />` alongside analytics in production web only.
+
 - [ ] Analytics: Google Tag Manager + GA4 (web; native later)
   - Impact: Medium
   - Effort: Easy
