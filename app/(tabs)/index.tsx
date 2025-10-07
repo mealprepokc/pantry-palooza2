@@ -35,9 +35,9 @@ export default function HomeScreen() {
   const qs = useLocalSearchParams();
   // Generate controls
   const [mealType, setMealType] = useState<'Breakfast'|'Lunch'|'Dinner'>('Dinner');
-  const [servings, setServings] = useState<number>(2);
+  const [servings, setServings] = useState<number>(4);
   // Removed Max Prep Time control from UI; backend still supports it but we no longer send it.
-  const [mode, setMode] = useState<'strict'|'loose'>('strict');
+  const [strictMode, setStrictMode] = useState<boolean>(false);
   const regenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -74,6 +74,15 @@ export default function HomeScreen() {
   useEffect(() => {
     if (user?.id) {
       loadUserLibrary();
+      // Load account prefs for strict/loose
+      (async () => {
+        const { data } = await supabase
+          .from('account_prefs')
+          .select('strict_mode')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (data && typeof data.strict_mode === 'boolean') setStrictMode(!!data.strict_mode);
+      })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
@@ -184,7 +193,7 @@ export default function HomeScreen() {
             mealType,
             servings,
             // maxTimeMinutes removed from UI; not sent
-            mode,
+            mode: strictMode ? 'strict' : 'loose',
           },
         },
       });
@@ -304,19 +313,7 @@ export default function HomeScreen() {
 
         {/* Max Prep Time control removed per request; times remain on cards */}
 
-        <View style={styles.controlGroup}>
-          <Text style={styles.controlLabel}>Dish Creation Mode</Text>
-          <View style={styles.segmentRow}>
-            {(['strict','loose'] as const).map((m) => (
-              <TouchableOpacity key={m} style={[styles.segment, mode===m && styles.segmentActive]} onPress={() => setMode(m)}>
-                <Text style={[styles.segmentText, mode===m && styles.segmentTextActive]}>{m==='strict' ? 'Strict' : 'Loose'}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={styles.helper}>
-            {mode==='strict' ? 'Strict: Use only your Library items plus pantry staples (salt, pepper, oil, water).' : 'Loose: Prefer your Library; allow reasonable additions/substitutions.'}
-          </Text>
-        </View>
+        {/* Dish Creation Mode moved to Account preferences */}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {shareMsg ? <Text style={styles.helper}>{shareMsg}</Text> : null}
@@ -355,6 +352,14 @@ export default function HomeScreen() {
                 <DishScorecard key={index} dish={dish} servings={servings} suggestedSides={suggestedSides} />
               );
             })}
+          </View>
+        )}
+        {loading && (
+          <View style={styles.loadingOverlay}>
+            <View style={styles.loadingCard}>
+              <ActivityIndicator size="large" color="#4ECDC4" />
+              <Text style={styles.loadingText}>Hang tight while we prepare your dish recommendations.</Text>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -498,5 +503,32 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#2C3E50',
     marginBottom: 16,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  loadingCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: '#E1E8ED',
+    alignItems: 'center',
+    gap: 12,
+    maxWidth: 360,
+  },
+  loadingText: {
+    color: '#2C3E50',
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '700',
   },
 });
