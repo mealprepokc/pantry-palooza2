@@ -208,6 +208,18 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Status: in_progress
   - Notes: Prompt definitions updated; sides remain loose. Need final UX for toggles and educational copy before marking done.
 
+- [x] Email confirmations: Resend SMTP + HTML template
+  - Impact: Medium
+  - Effort: Medium
+  - Status: done
+  - Notes: Configured Resend SMTP via Supabase, verified DNS in Vercel, and added branded HTML confirmation email template.
+
+- [x] Vercel Analytics on web builds
+  - Impact: Medium
+  - Effort: Easy
+  - Status: done
+  - Notes: Installed `@vercel/analytics` and mounted `<Analytics />` for production web. Guarded with platform/env checks.
+
 - [ ] Analytics: Google Tag Manager + GA4 (web; native later)
   - Impact: Medium
   - Effort: Easy

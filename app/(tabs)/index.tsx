@@ -124,7 +124,7 @@ export default function HomeScreen() {
   const qs = useLocalSearchParams();
   // Generate controls
   const [mealType, setMealType] = useState<MealType>('Dinner');
-  const [servings, setServings] = useState<number>(4);
+  const [servings, setServings] = useState<number>(2);
   // Removed Max Prep Time control from UI; backend still supports it but we no longer send it.
   const [strictMode, setStrictMode] = useState<boolean>(false);
   const regenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -400,7 +400,7 @@ export default function HomeScreen() {
         <View style={styles.controlGroup}>
           <Text style={styles.controlLabel}>Serving Size</Text>
           <View style={styles.segmentRow}>
-            {[1,2,3,4,5,6].map((n) => (
+            {[1,2,3,4].map((n) => (
               <TouchableOpacity key={n} style={[styles.segment, servings===n && styles.segmentActive]} onPress={() => setServings(n)}>
                 <Text style={[styles.segmentText, servings===n && styles.segmentTextActive]}>{n}</Text>
               </TouchableOpacity>

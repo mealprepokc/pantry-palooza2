@@ -70,6 +70,7 @@ Deno.serve(async (req: Request) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openaiApiKey}`,
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
@@ -233,9 +234,10 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error) {
-    console.error('Error generating dishes:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Error generating dishes:', message);
     return new Response(
-      JSON.stringify({ error: 'Failed to generate dishes', details: error.message }),
+      JSON.stringify({ error: 'Failed to generate dishes', details: message }),
       {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
