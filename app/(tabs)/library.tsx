@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SEASONINGS, VEGETABLES, ENTREES, PASTAS, EQUIPMENT } from '@/constants/ingredients';
+import { isIngredientAllowed, type DietaryPrefs } from '@/lib/dietary';
 
 // Library screen MVP: manage user's ingredient library with simple add/remove and type-ahead suggestions.
 
@@ -98,6 +99,7 @@ export default function LibraryScreen() {
   // Track expanded/collapsed state for "Add more items" per section
   const [expandedMore, setExpandedMore] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
+  const [dietary, setDietary] = useState<DietaryPrefs>({});
 
   const [inputs, setInputs] = useState<Record<string, string>>({
     Seasonings: '',
@@ -115,6 +117,18 @@ export default function LibraryScreen() {
   useEffect(() => {
     if (!user) return;
     (async () => {
+      // Load account preferences for dietary filtering
+      try {
+        const { data: prefs } = await supabase
+          .from('account_prefs')
+          .select('dietary')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (prefs && prefs.dietary) setDietary(prefs.dietary as DietaryPrefs);
+      } catch (_) {
+        // ignore; default empty
+      }
+
       // Load from user_library if exists; else try migrate from user_selections (one-time)
       const { data: lib } = await supabase
         .from('user_library')
@@ -245,7 +259,8 @@ export default function LibraryScreen() {
       if (selectedLower.has(lower)) continue; // hide if already selected
       if (seenLower.has(lower)) continue; // de-dup
       seenLower.add(lower);
-      out.push(capitalize(norm(k)));
+      const candidate = capitalize(norm(k));
+      if (isIngredientAllowed(candidate, dietary)) out.push(candidate);
       if (out.length >= 6) break;
     }
     return out;
@@ -263,7 +278,7 @@ export default function LibraryScreen() {
           <View key={section} style={styles.section}>
             <Text style={styles.sectionTitle}>{section}</Text>
             {(() => {
-              const selectedOnly = uniqueSorted([...(data[section] as string[]) || []]);
+              const selectedOnly = uniqueSorted([...(data[section] as string[]) || []]).filter((it) => isIngredientAllowed(it, dietary));
               if (selectedOnly.length === 0) return null;
               return (
                 <View style={styles.itemsGrid}>
@@ -281,7 +296,7 @@ export default function LibraryScreen() {
               <Text style={styles.dropdownHeaderText}>Add more items</Text>
             </View>
             <View style={styles.defaultsGrid}>
-              {moreListFor(section, data[section]).map((item) => {
+              {moreListFor(section, data[section]).filter((it) => isIngredientAllowed(it, dietary)).map((item) => {
                 const selected = (data[section] || []).includes(item);
                 return (
                   <TouchableOpacity
