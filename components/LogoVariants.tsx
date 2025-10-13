@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView, Text } from 'react-native';
-import Svg, { Path, Circle, Rect, Ellipse, Polygon, Line, G } from 'react-native-svg';
+import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 
 export function LogoVariants() {
   return (

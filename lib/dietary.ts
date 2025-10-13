@@ -11,6 +11,8 @@ export type DietaryPrefs = Partial<Record<DietaryKey, boolean>>;
 
 export const DIETARY_KEYS: DietaryKey[] = ['vegan', 'vegetarian', 'pescatarian', 'gluten_free', 'dairy_free', 'keto', 'paleo'];
 
+export const DIETARY_FEATURE_ENABLED = false;
+
 const KEYWORDS = {
   meat: ['beef', 'steak', 'pork', 'bacon', 'ham', 'lamb', 'veal', 'prosciutto', 'salami', 'pepperoni', 'chorizo', 'duck', 'goat'],
   poultry: ['chicken', 'turkey', 'hen'],
@@ -36,6 +38,7 @@ function includesAny(text: string, terms: string[]) {
 }
 
 export function sanitizeDietaryPrefs(raw: any): DietaryPrefs {
+  if (!DIETARY_FEATURE_ENABLED) return {};
   const prefs: DietaryPrefs = {};
   if (!raw || typeof raw !== 'object') return prefs;
   DIETARY_KEYS.forEach((key) => {
@@ -45,6 +48,7 @@ export function sanitizeDietaryPrefs(raw: any): DietaryPrefs {
 }
 
 export function isIngredientAllowed(ingredient: string, prefs: DietaryPrefs): boolean {
+  if (!DIETARY_FEATURE_ENABLED) return true;
   const t = (ingredient || '').toLowerCase();
   if (!t) return true;
 

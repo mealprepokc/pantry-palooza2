@@ -7,6 +7,9 @@ export default function SubscriptionsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Text style={styles.backText}>Back</Text>
+        </TouchableOpacity>
         <Text style={styles.title}>Subscriptions</Text>
         <Text style={styles.subtitle}>Coming soon</Text>
         <Text style={styles.body}>
@@ -28,10 +31,6 @@ export default function SubscriptionsScreen() {
             <Text style={styles.ctaText}>Notify Me</Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity style={styles.secondary} onPress={() => router.back()}>
-          <Text style={styles.secondaryText}>Back</Text>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -40,6 +39,17 @@ export default function SubscriptionsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF' },
   content: { padding: 20 },
+  backBtn: {
+    alignSelf: 'flex-start',
+    borderWidth: 2,
+    borderColor: '#E1E8ED',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 12,
+    backgroundColor: '#FFF',
+  },
+  backText: { color: '#2C3E50', fontWeight: '700' },
   title: { fontSize: 24, fontWeight: '800', color: '#2C3E50' },
   subtitle: { marginTop: 4, color: '#5A6C7D' },
   body: { marginTop: 12, color: '#2C3E50' },
@@ -48,6 +58,4 @@ const styles = StyleSheet.create({
   cardPoint: { color: '#2C3E50' },
   cta: { backgroundColor: '#4ECDC4', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, alignSelf: 'flex-start', marginTop: 10 },
   ctaText: { color: '#FFF', fontWeight: '800' },
-  secondary: { borderWidth: 2, borderColor: '#E1E8ED', backgroundColor: '#FFF', paddingVertical: 12, borderRadius: 12, alignItems: 'center', marginTop: 20 },
-  secondaryText: { color: '#2C3E50', fontSize: 15, fontWeight: '700' },
 });

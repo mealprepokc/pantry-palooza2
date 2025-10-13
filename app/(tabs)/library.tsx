@@ -1,564 +1,742 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
-import { router } from 'expo-router';
+// app/(tabs)/library.tsx
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+  ToastAndroid,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, type Href } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { SEASONINGS, VEGETABLES, ENTREES, PASTAS, EQUIPMENT } from '@/constants/ingredients';
-import { isIngredientAllowed, sanitizeDietaryPrefs, type DietaryPrefs } from '@/lib/dietary';
-import { useFocusEffect } from '@react-navigation/native';
+import {
+  MASTER_SECTIONS,
+  MEAL_SECTION_MAP,
+  type MasterLibrary,
+  type MasterSection,
+  createEmptyMasterLibrary,
+} from '@/types/library';
+import { getDefaultPantryItems, getSuggestedPantryItems } from '@/constants/pantryDefaults';
 
-// Library screen MVP: manage user's ingredient library with simple add/remove and type-ahead suggestions.
-
-// Defaults for new sections
-const DEFAULTS = {
-  // Produce now includes common fruits
-  Produce: [
-    'Tomatoes', 'Onions', 'Bell Peppers', 'Spinach', 'Garlic',
-    'Apples', 'Bananas', 'Strawberries', 'Blueberries', 'Grapes',
-    'Oranges', 'Lemons', 'Limes', 'Avocado', 'Cucumbers',
-    'Carrots', 'Broccoli', 'Mushrooms', 'Zucchini', 'Kale',
-  ],
-  Grains: ['Rice', 'Quinoa', 'Oats', 'Barley', 'Farro'],
-  Breads: ['Sandwich Bread', 'Tortillas', 'Pita', 'Baguette', 'Hamburger Buns'],
-  'Sauces/Condiments': ['Ketchup', 'Mustard', 'Mayonnaise', 'Soy Sauce', 'Hot Sauce'],
-  Dairy: ['Milk', 'Cheese', 'Butter', 'Yogurt', 'Cream'],
-  'Non-Perishable Items': ['Canned Beans', 'Canned Tomatoes', 'Broth', 'Peanut Butter', 'Pasta Sauce'],
+const SECTION_COLUMN_MAP: Record<MasterSection, string> = {
+  Seasonings: 'seasonings',
+  Produce: 'produce',
+  Proteins: 'proteins',
+  Grains: 'grains',
+  Breads: 'breads',
+  Dairy: 'dairy',
+  'Sauces/Condiments': 'sauces_condiments',
+  'Non-Perishable Items': 'non_perishables',
+  Pasta: 'pastas',
+  Equipment: 'equipment',
 };
 
-const KNOWN_MAP: Record<string, string[]> = {
-  Seasonings: SEASONINGS,
-  Produce: VEGETABLES, // rename of Vegetables
-  Proteins: ENTREES,
-  Pasta: PASTAS,
-  Equipment: EQUIPMENT,
-  Grains: DEFAULTS.Grains,
-  Breads: DEFAULTS.Breads,
-  'Sauces/Condiments': DEFAULTS['Sauces/Condiments'],
-  Dairy: DEFAULTS.Dairy,
-  'Non-Perishable Items': DEFAULTS['Non-Perishable Items'],
+const SECTION_DEFAULTS: Record<MasterSection, string[]> = MASTER_SECTIONS.reduce((acc, section) => {
+  acc[section] = getDefaultPantryItems(section);
+  return acc;
+}, {} as Record<MasterSection, string[]>);
+
+const STARTER_ITEMS_PER_SECTION = 3;
+
+const buildStarterLibrary = () => {
+  const starter = createEmptyMasterLibrary();
+  MASTER_SECTIONS.forEach((section) => {
+    const defaults = SECTION_DEFAULTS[section];
+    if (defaults.length > 0) {
+      starter[section] = defaults.slice(0, STARTER_ITEMS_PER_SECTION);
+    }
+  });
+  return starter;
 };
 
-const SECTION_KEYS = Object.keys(KNOWN_MAP) as (keyof typeof KNOWN_MAP)[];
-// Render order for a more natural flow
-const RENDER_KEYS: (keyof typeof KNOWN_MAP)[] = [
-  'Produce',
-  'Proteins',
-  'Pasta',
-  'Grains',
-  'Breads',
-  'Sauces/Condiments',
-  'Dairy',
-  'Seasonings',
-  'Non-Perishable Items',
-  'Equipment',
-];
+const USER_SECTION_SUGGESTIONS: Record<MasterSection, string[]> = MASTER_SECTIONS.reduce((acc, section) => {
+  acc[section] = getSuggestedPantryItems(section);
+  return acc;
+}, {} as Record<MasterSection, string[]>);
 
-// Cross-section weighting for suggestions
-const WEIGHTS: Record<string, string[]> = {
-  Produce: ['Sauces/Condiments', 'Seasonings', 'Dairy', 'Breads', 'Grains', 'Pasta', 'Proteins'],
-  Proteins: ['Sauces/Condiments', 'Seasonings', 'Dairy', 'Grains', 'Breads', 'Pasta', 'Produce'],
-  Pasta: ['Sauces/Condiments', 'Seasonings', 'Dairy', 'Proteins', 'Produce', 'Breads', 'Grains'],
-  Grains: ['Proteins', 'Sauces/Condiments', 'Seasonings', 'Produce', 'Breads', 'Pasta', 'Dairy'],
-  Breads: ['Proteins', 'Sauces/Condiments', 'Dairy', 'Produce', 'Seasonings'],
-  'Sauces/Condiments': ['Produce', 'Proteins', 'Seasonings', 'Dairy', 'Breads'],
-  Dairy: ['Produce', 'Proteins', 'Breads', 'Pasta', 'Seasonings'],
-  Seasonings: ['Produce', 'Proteins', 'Sauces/Condiments', 'Dairy', 'Pasta'],
-  'Non-Perishable Items': ['Pasta', 'Grains', 'Sauces/Condiments', 'Seasonings'],
-  Equipment: [],
+const normalizeList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  value.forEach((item) => {
+    const text = String(item ?? '').trim();
+    if (!text) return;
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(capitalize(text));
+  });
+  return out.sort((a, b) => a.localeCompare(b));
+};
+
+const toMasterLibrary = (row: Record<string, unknown>): MasterLibrary => {
+  const base = createEmptyMasterLibrary();
+  MASTER_SECTIONS.forEach((section) => {
+    const column = SECTION_COLUMN_MAP[section];
+    base[section] = normalizeList(row?.[column]);
+  });
+  return base;
+};
+
+type LibraryPayload = { [key: string]: string[] } & { user_id?: string };
+
+const toPayload = (library: MasterLibrary) => {
+  const payload: LibraryPayload = {};
+  MASTER_SECTIONS.forEach((section) => {
+    const column = SECTION_COLUMN_MAP[section];
+    payload[column] = library[section] ?? [];
+  });
+  return payload;
+};
+
+const capitalize = (text: string): string =>
+  text
+    .split(' ')
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1).toLowerCase() : word))
+    .join(' ');
+
+const buildEmptyInputs = () => {
+  return MASTER_SECTIONS.reduce((acc, section) => {
+    acc[section] = '';
+    return acc;
+  }, {} as Record<MasterSection, string>);
+};
+
+const buildCollapsedState = () => {
+  return MASTER_SECTIONS.reduce((acc, section) => {
+    acc[section] = false;
+    return acc;
+  }, {} as Record<MasterSection, boolean>);
 };
 
 export default function LibraryScreen() {
   const { user } = useAuth();
-
-  const [data, setData] = useState<Record<string, string[]>>({
-    Seasonings: [],
-    Produce: [],
-    Proteins: [],
-    Pasta: [],
-    Equipment: [],
-    Grains: [],
-    Breads: [],
-    'Sauces/Condiments': [],
-    Dairy: [],
-    'Non-Perishable Items': [],
-  });
-  // Track items that should remain visible even if deselected (e.g., custom additions)
-  const [extras, setExtras] = useState<Record<string, string[]>>({
-    Seasonings: [],
-    Produce: [],
-    Proteins: [],
-    Pasta: [],
-    Equipment: [],
-    Grains: [],
-    Breads: [],
-    'Sauces/Condiments': [],
-    Dairy: [],
-    'Non-Perishable Items': [],
-  });
-
-  // Track expanded/collapsed state for "Add more items" per section
-  const [expandedMore, setExpandedMore] = useState<Record<string, boolean>>({});
+  const [library, setLibrary] = useState<MasterLibrary>(() => createEmptyMasterLibrary());
+  const [inputs, setInputs] = useState<Record<MasterSection, string>>(() => buildEmptyInputs());
+  const [collapsed, setCollapsed] = useState<Record<MasterSection, boolean>>(() => buildCollapsedState());
   const [saving, setSaving] = useState(false);
-  const [dietary, setDietary] = useState<DietaryPrefs>({});
+  const [loading, setLoading] = useState(true);
+  const [unsaved, setUnsaved] = useState(false);
+  const [compactHeader, setCompactHeader] = useState(false);
+  const hasShownOnboardingRef = useRef(false);
 
-  const [inputs, setInputs] = useState<Record<string, string>>({
-    Seasonings: '',
-    Produce: '',
-    Proteins: '',
-    Pasta: '',
-    Equipment: '',
-    Grains: '',
-    Breads: '',
-    'Sauces/Condiments': '',
-    Dairy: '',
-    'Non-Perishable Items': '',
-  });
+  const totalSelected = useMemo(
+    () => MASTER_SECTIONS.reduce((sum, section) => sum + (library[section]?.length || 0), 0),
+    [library]
+  );
+
+  const readyMeals = useMemo(() => {
+    return Object.entries(MEAL_SECTION_MAP).reduce((acc, [meal, sections]) => {
+      const complete = sections.every((section) => (library[section as MasterSection]?.length || 0) > 0);
+      if (complete) acc.push(meal);
+      return acc;
+    }, [] as string[]);
+  }, [library]);
 
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     (async () => {
-      // Load account preferences for dietary filtering
+      setLoading(true);
       try {
-        const { data: prefs } = await supabase
-          .from('account_prefs')
-          .select('dietary')
+        const { data, error } = await supabase
+          .from('user_library')
+          .select('*')
           .eq('user_id', user.id)
           .maybeSingle();
-        if (prefs && prefs.dietary) setDietary(sanitizeDietaryPrefs(prefs.dietary));
-      } catch (_) {
-        // ignore; default empty
+
+        if (error) throw error;
+
+        if (!cancelled && data) {
+          setLibrary(toMasterLibrary(data));
+          setUnsaved(false);
+        }
+
+        let legacySelection: Record<string, unknown> | null = null;
+        if (!data) {
+          const { data: legacy, error: legacyError } = await supabase
+            .from('user_selections')
+            .select('*')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (legacyError) throw legacyError;
+
+          if (!cancelled) {
+            const migrated = buildStarterLibrary();
+            const legacySeasonings = normalizeList(legacy?.seasonings);
+            const legacyProduce = normalizeList(legacy?.vegetables);
+            const legacyProteins = normalizeList(legacy?.entrees);
+            const legacyPastas = normalizeList(legacy?.pastas);
+            const legacyEquipment = normalizeList(legacy?.equipment);
+            migrated.Seasonings = legacySeasonings.length
+              ? legacySeasonings
+              : migrated.Seasonings;
+            migrated.Produce = legacyProduce.length
+              ? legacyProduce
+              : migrated.Produce;
+            migrated.Proteins = legacyProteins.length
+              ? legacyProteins
+              : migrated.Proteins;
+            migrated.Pasta = legacyPastas.length
+              ? legacyPastas
+              : migrated.Pasta;
+            migrated.Equipment = legacyEquipment.length
+              ? legacyEquipment
+              : migrated.Equipment;
+            setLibrary(migrated);
+            setUnsaved(true);
+            legacySelection = legacy ?? null;
+          }
+        }
+        if (!data && !legacySelection) {
+          const starter = buildStarterLibrary();
+          if (!cancelled) {
+            setLibrary(starter);
+            setUnsaved(true);
+          }
+        }
+      } catch (err) {
+        console.error('Load library error', err);
+        if (!cancelled) Alert.alert('Error', 'Unable to load your library. Please try again.');
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-
-      // Load from user_library if exists; else try migrate from user_selections (one-time)
-      const { data: lib } = await supabase
-        .from('user_library')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (lib) {
-        // Map old -> new; relocate items into new categories heuristically
-        const mapped = normalizeAndRelocate({
-          Seasonings: lib.seasonings || [],
-          Produce: lib.produce || lib.vegetables || [],
-          Proteins: lib.proteins || lib.entrees || [],
-          Pasta: lib.pastas || [],
-          Equipment: lib.equipment || [],
-          Grains: lib.grains || [],
-          Breads: lib.breads || [],
-          'Sauces/Condiments': lib.sauces_condiments || [],
-          Dairy: lib.dairy || [],
-          'Non-Perishable Items': lib.non_perishables || [],
-        });
-        setData(fillDefaults(mapped));
-        return;
-      }
-
-      // Try migration
-      const { data: oldSel } = await supabase
-        .from('user_selections')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      const migrated = normalizeAndRelocate({
-        Seasonings: oldSel?.seasonings || [],
-        Produce: oldSel?.vegetables || [],
-        Proteins: oldSel?.entrees || [],
-        Pasta: oldSel?.pastas || [],
-        Equipment: oldSel?.equipment || [],
-        Grains: [],
-        Breads: [],
-        'Sauces/Condiments': [],
-        Dairy: [],
-        'Non-Perishable Items': [],
-      });
-      const withDefaults = fillDefaults(migrated);
-      setData(withDefaults);
-
-      // Persist new library row (guard if columns missing)
-      await safeUpsertLibrary(user.id, withDefaults);
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
-  const persist = async (updated: typeof data) => {
-    setData(updated);
+  const toggleCollapsed = useCallback((section: MasterSection) => {
+    setCollapsed((prev) => ({ ...prev, [section]: !prev[section] }));
+  }, []);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      const shouldCompact = offsetY > 60;
+      setCompactHeader((prev) => (prev !== shouldCompact ? shouldCompact : prev));
+    },
+    []
+  );
+
+  const toggleItem = useCallback((section: MasterSection, item: string) => {
+    const normalized = capitalize(item);
+    setLibrary((prev) => {
+      const current = prev[section] ?? [];
+      const exists = current.some((value) => value.toLowerCase() === normalized.toLowerCase());
+      const updated = exists
+        ? current.filter((value) => value.toLowerCase() !== normalized.toLowerCase())
+        : uniqueSorted([...current, normalized]);
+      return { ...prev, [section]: updated };
+    });
+    setUnsaved(true);
+  }, []);
+
+  const addItems = useCallback((section: MasterSection) => {
+    const raw = inputs[section] || '';
+    const entries = raw
+      .split(/[,\n]+/)
+      .map((value) => capitalize(value.trim()))
+      .filter((value) => value.length > 0);
+    if (!entries.length) return;
+    setLibrary((prev) => {
+      const current = prev[section] ?? [];
+      return {
+        ...prev,
+        [section]: uniqueSorted([...current, ...entries]),
+      };
+    });
+    setInputs((prev) => ({ ...prev, [section]: '' }));
+    setUnsaved(true);
+  }, [inputs]);
+
+  const hasMinimumForAnyMeal = useMemo(() => {
+    return Object.values(MEAL_SECTION_MAP).some((sections) =>
+      sections.every((section) => (library[section as MasterSection]?.length ?? 0) > 0)
+    );
+  }, [library]);
+
+  const canSave = unsaved && hasMinimumForAnyMeal;
+
+  const showSaveToast = useCallback(() => {
+    const message =
+      'Add at least one item per meal section, then save your Library to unlock Generate Dishes.';
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.LONG);
+    } else {
+      Alert.alert('Almost there', message);
+    }
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!canSave) {
+      showSaveToast();
+      return;
+    }
     if (!user) return;
-    await safeUpsertLibrary(user.id, updated);
-  };
-
-  const toggleDefaultItem = (section: string, item: string) => {
-    const has = (data[section] || []).includes(item);
-    if (has) {
-      removeItem(section, item);
-    } else {
-      const current = new Set([...(data[section] || [])]);
-      current.add(item);
-      persist({ ...data, [section]: Array.from(current).sort() });
+    try {
+      setSaving(true);
+      const payload = toPayload(library);
+      payload.user_id = user.id;
+      const { error } = await supabase.from('user_library').upsert(payload, { onConflict: 'user_id' });
+      if (error) throw error;
+      setUnsaved(false);
+      const successMessage = 'Library saved! Generate a meal idea next.';
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(successMessage, ToastAndroid.SHORT);
+      } else {
+        Alert.alert('Saved', successMessage);
+      }
+      router.replace({ pathname: '/(tabs)', params: { meal: 'Breakfast' } } as any);
+    } catch (err) {
+      console.error('Save library error', err);
+      Alert.alert('Error', 'Could not save your library. Please try again.');
+    } finally {
+      setSaving(false);
     }
-  };
+  }, [canSave, library, showSaveToast, user]);
 
-  const defaultListFor = (section: string) => {
-    const fromDefaults = (DEFAULTS as any)[section] as string[] | undefined;
-    if (fromDefaults && fromDefaults.length) return fromDefaults;
-    const known = KNOWN_MAP[section] || [];
-    return known.slice(0, 5);
-  };
+  const statusLabel = hasMinimumForAnyMeal ? (unsaved ? 'Needs Save' : 'Ready') : 'Keep Adding';
+  const statusStyle = hasMinimumForAnyMeal
+    ? unsaved
+      ? styles.statusPending
+      : styles.statusReady
+    : styles.statusNeutral;
 
-  const addItem = (section: string) => {
-    const value = (inputs[section] || '').trim();
-    if (!value) return;
-    // text-only validation
-    const clean = value.replace(/\s+/g, ' ').replace(/[^\p{L}\p{N}\s&\-']/gu, '').trim();
-    const toAdd = capitalize(clean);
-    // mark as selected
-    const current = new Set([...(data[section] || [])]);
-    current.add(toAdd);
-    // keep visible even if later deselected
-    const ex = new Set([...(extras[section] || [])]);
-    ex.add(toAdd);
-    setExtras({ ...extras, [section]: uniqueSorted(Array.from(ex)) });
-    const updated = { ...data, [section]: Array.from(current).sort() };
-    setInputs({ ...inputs, [section]: '' });
-    persist(updated);
-  };
-
-  const removeItem = (section: string, item: string) => {
-    const arr = (data[section] || []).filter((x) => x !== item);
-    persist({ ...data, [section]: arr });
-  };
-
-  const toggleSelectedChip = (section: string, item: string) => {
-    const has = (data[section] || []).includes(item);
-    // ensure item is tracked in extras so it remains visible
-    const ex = new Set([...(extras[section] || [])]);
-    ex.add(item);
-    setExtras({ ...extras, [section]: uniqueSorted(Array.from(ex)) });
-    if (has) {
-      removeItem(section, item);
-    } else {
-      const current = new Set([...(data[section] || [])]);
-      current.add(item);
-      persist({ ...data, [section]: Array.from(current).sort() });
+  useEffect(() => {
+    if (loading) return;
+    if (hasShownOnboardingRef.current) return;
+    if (!hasMinimumForAnyMeal) {
+      showSaveToast();
+      hasShownOnboardingRef.current = true;
     }
-  };
-
-  const suggestions = (section: string) => {
-    const known = KNOWN_MAP[section] || [];
-    const q = (inputs[section] || '').toLowerCase().trim();
-    if (!q) return [] as string[];
-    // include defaults for that section too
-    const base = new Set([...(known || []), ...((DEFAULTS as any)[section] || [])]);
-    const norm = (s: string) => (s || '').trim();
-    const selectedLower = new Set((data[section] || []).map((s) => norm(s).toLowerCase()));
-    const seenLower = new Set<string>();
-    const out: string[] = [];
-    for (const k of Array.from(base)) {
-      const lower = norm(k).toLowerCase();
-      if (!lower.includes(q)) continue;
-      if (selectedLower.has(lower)) continue; // hide if already selected
-      if (seenLower.has(lower)) continue; // de-dup
-      seenLower.add(lower);
-      const candidate = capitalize(norm(k));
-      if (isIngredientAllowed(candidate, dietary)) out.push(candidate);
-      if (out.length >= 6) break;
-    }
-    return out;
-  };
+  }, [hasMinimumForAnyMeal, loading, showSaveToast]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Your Library</Text>
-        <Text style={styles.headerSubtitle}>Manage your ingredients. Add/Remove items at any time and remember to save your library when finished.</Text>
-      </View>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoider}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 80}
+      >
+        <View style={[styles.header, compactHeader && styles.headerCompact]}>
+          <Text style={[styles.headerTitle, compactHeader && styles.headerTitleCompact]}>Your Master Library</Text>
+          {!compactHeader && (
+            <Text style={styles.headerSubtitle}>
+              Build a single pantry that powers Breakfast, Lunch, and Dinner. Tap to toggle suggestions, add
+              custom items, and save when you are done.
+            </Text>
+          )}
+        </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {RENDER_KEYS.map((section) => (
-          <View key={section} style={styles.section}>
-            <Text style={styles.sectionTitle}>{section}</Text>
-            {(() => {
-              const selectedOnly = uniqueSorted([...(data[section] as string[]) || []]).filter((it) => isIngredientAllowed(it, dietary));
-              if (selectedOnly.length === 0) return null;
-              return (
-                <View style={styles.itemsGrid}>
-                  {selectedOnly.map((item) => (
-                    <TouchableOpacity key={item} style={[styles.itemChip, styles.defaultChipSelected]} onPress={() => toggleSelectedChip(section, item)}>
-                      <Text style={[styles.itemText, styles.defaultChipTextSelected]}>{item}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              );
-            })()}
-
-            {/* Add more items */}
-            <View style={styles.dropdownHeader}>
-              <Text style={styles.dropdownHeaderText}>Add more items</Text>
-            </View>
-            <View style={styles.defaultsGrid}>
-              {moreListFor(section, data[section]).filter((it) => isIngredientAllowed(it, dietary)).map((item) => {
-                const selected = (data[section] || []).includes(item);
-                return (
-                  <TouchableOpacity
-                    key={item}
-                    onPress={() => toggleSelectedChip(section, item)}
-                    style={[styles.defaultChip, selected && styles.defaultChipSelected]}
-                  >
-                    <Text style={[styles.defaultChipText, selected && styles.defaultChipTextSelected]}>
-                      {item}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <View style={styles.addRow}>
-              <TextInput
-                style={styles.input}
-                placeholder={`Type to add more to ${section}`}
-                value={inputs[section]}
-                onChangeText={(t) => setInputs({ ...inputs, [section]: t })}
-                autoCapitalize="words"
-                autoCorrect
-              />
-              <TouchableOpacity style={styles.addButton} onPress={() => addItem(section)}>
-                <Text style={styles.addButtonText}>Add</Text>
-              </TouchableOpacity>
-            </View>
-            {suggestions(section).length > 0 && (
-              <View style={styles.suggestions}>
-                {suggestions(section).map((s) => (
-                  <TouchableOpacity
-                    key={s}
-                    onPress={() => {
-                      const current = new Set([...(data[section] || [])]);
-                      current.add(s);
-                      const ex = new Set([...(extras[section] || [])]);
-                      ex.add(s);
-                      setExtras({ ...extras, [section]: uniqueSorted(Array.from(ex)) });
-                      persist({ ...data, [section]: Array.from(current).sort() });
-                      setInputs({ ...inputs, [section]: '' });
-                    }}
-                    style={styles.suggestionChip}
-                  >
-                    <Text style={styles.suggestionText}>{s}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+        <View style={[styles.summaryCard, compactHeader && styles.summaryCardCompact]}>
+          <View>
+            <Text style={styles.summaryTitle}>{totalSelected} items saved</Text>
+            {!compactHeader && (
+              <Text style={styles.summaryDescription}>
+                Ready for {readyMeals.length ? readyMeals.join(', ') : 'no meals yet'}. Add at least one item per
+                category to unlock better suggestions.
+              </Text>
             )}
           </View>
-        ))}
+          <TouchableOpacity
+            style={[styles.statusBadge, statusStyle]}
+            activeOpacity={0.8}
+            onPress={() => {
+              if (!canSave) showSaveToast();
+            }}
+          >
+            <Text style={styles.statusBadgeText} numberOfLines={1} ellipsizeMode="tail">
+              {statusLabel}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-        <View style={{ height: 16 }} />
+        {loading ? (
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" />
+          </View>
+        ) : (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+          >
+            {MASTER_SECTIONS.map((section) => {
+              const selectedItems = library[section] ?? [];
+              const defaults = SECTION_DEFAULTS[section];
+              const defaultSet = new Set(defaults.map((item) => item.toLowerCase()));
+              const suggestions = USER_SECTION_SUGGESTIONS[section].filter(
+                (item) => !defaultSet.has(item.toLowerCase())
+              );
+              const suggestionSet = new Set(suggestions.map((item) => item.toLowerCase()));
+              const customItems = selectedItems.filter((item) => {
+                const key = item.toLowerCase();
+                return !defaultSet.has(key) && !suggestionSet.has(key);
+              });
+              const isCollapsed = collapsed[section];
+
+              return (
+                <View key={section} style={styles.sectionCard}>
+                  <TouchableOpacity
+                    style={styles.sectionHeader}
+                    onPress={() => toggleCollapsed(section)}
+                    activeOpacity={0.7}
+                  >
+                    <View>
+                      <Text style={styles.sectionTitle}>{section}</Text>
+                      <Text style={styles.sectionMeta}>{selectedItems.length} selected</Text>
+                    </View>
+                    <Text style={styles.sectionCollapse}>{isCollapsed ? '+' : '−'}</Text>
+                  </TouchableOpacity>
+
+                  {!isCollapsed && (
+                    <>
+                      <View style={styles.subSectionHeader}>
+                        <Text style={styles.subSectionTitle}>Recommended</Text>
+                      </View>
+                      <View style={styles.chipGrid}>
+                        {defaults.map((item) => {
+                          const active = selectedItems.some((value) => value.toLowerCase() === item.toLowerCase());
+                          return (
+                            <TouchableOpacity
+                              key={item}
+                              style={[styles.chip, active && styles.chipActive]}
+                              onPress={() => toggleItem(section, item)}
+                            >
+                              <Text style={[styles.chipText, active && styles.chipTextActive]}>{item}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+
+                      {suggestions.length > 0 ? (
+                        <>
+                          <View style={styles.subSectionHeader}>
+                            <Text style={styles.subSectionTitle}>More ideas</Text>
+                          </View>
+                          <View style={styles.chipGrid}>
+                            {suggestions.map((item) => {
+                              const active = selectedItems.some(
+                                (value) => value.toLowerCase() === item.toLowerCase()
+                              );
+                              return (
+                                <TouchableOpacity
+                                  key={item}
+                                  style={[styles.chip, styles.chipGhost, active && styles.chipActive]}
+                                  onPress={() => toggleItem(section, item)}
+                                >
+                                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{item}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </>
+                      ) : null}
+
+                      {customItems.length > 0 ? (
+                        <>
+                          <View style={styles.subSectionHeader}>
+                            <Text style={styles.subSectionTitle}>Your items</Text>
+                          </View>
+                          <View style={styles.customGrid}>
+                            {customItems.map((item) => (
+                              <TouchableOpacity
+                                key={item}
+                                style={styles.customChip}
+                                onPress={() => toggleItem(section, item)}
+                              >
+                                <Text style={styles.customChipText}>{item}</Text>
+                                <Text style={styles.customChipRemove}>×</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </>
+                      ) : null}
+
+                      <View style={styles.addRow}>
+                        <TextInput
+                          style={styles.addInput}
+                          placeholder={`Add items to ${section.toLowerCase()}`}
+                          value={inputs[section]}
+                          onChangeText={(value) => setInputs((prev) => ({ ...prev, [section]: value }))}
+                          multiline
+                          blurOnSubmit={false}
+                          autoCapitalize="words"
+                          autoCorrect
+                        />
+                        <TouchableOpacity style={styles.addButton} onPress={() => addItems(section)}>
+                          <Text style={styles.addButtonText}>Add</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </View>
+              );
+            })}
+
+            <View style={{ height: 24 }} />
+          </ScrollView>
+        )}
+
         <TouchableOpacity
-          style={[styles.primary, saving && { opacity: 0.7 }]}
-          disabled={saving}
-          onPress={async () => {
-            try {
-              setSaving(true);
-              // Persist exactly what the user selected (allow empty sections)
-              if (user) {
-                await safeUpsertLibrary(user.id, data);
-              }
-              Alert.alert('Saved', 'Your Library has been saved.');
-            } catch (e) {
-              console.error('Save library error', e);
-              Alert.alert('Error', 'Could not save your Library. Please try again.');
-            } finally {
-              setSaving(false);
-            }
-          }}
+          style={[styles.primaryButton, (!canSave || saving) && styles.primaryButtonDisabled]}
+          disabled={saving || !canSave}
+          onPress={handleSave}
+          activeOpacity={canSave ? 0.85 : 1}
         >
-          <Text style={styles.primaryText}>{saving ? 'Saving…' : 'Save My Library'}</Text>
+          <Text style={styles.primaryButtonText}>{saving ? 'Saving…' : 'Save Library'}</Text>
         </TouchableOpacity>
-        <View style={{ height: 24 }} />
-      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-function capitalize(s: string) {
-  if (!s) return s;
-  return s
-    .split(' ')
-    .map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
-    .join(' ');
-}
-
-function uniqueSorted(arr: string[]) {
-  return Array.from(new Set(arr.map(capitalize))).sort();
-}
-
-// Heuristic relocation rules for new categories
-function normalizeAndRelocate(src: Record<string, string[]>) {
-  const out: Record<string, string[]> = {
-    Seasonings: uniqueSorted(src.Seasonings || []),
-    Produce: uniqueSorted(src.Produce || []),
-    Proteins: uniqueSorted(src.Proteins || []),
-    Pasta: uniqueSorted(src.Pasta || []),
-    Equipment: uniqueSorted(src.Equipment || []),
-    Grains: uniqueSorted(src.Grains || []),
-    Breads: uniqueSorted(src.Breads || []),
-    'Sauces/Condiments': uniqueSorted(src['Sauces/Condiments'] || []),
-    Dairy: uniqueSorted(src.Dairy || []),
-    'Non-Perishable Items': uniqueSorted(src['Non-Perishable Items'] || []),
-  };
-
-  // Move sauces/condiments from Seasonings if present
-  const sauceKeywords = ['ketchup','mustard','mayo','mayonnaise','soy','sriracha','hot sauce','bbq','barbecue','teriyaki','vinegar','relish'];
-  out['Sauces/Condiments'] = uniqueSorted([
-    ...out['Sauces/Condiments'],
-    ...out.Seasonings.filter((i) => includesAny(i, sauceKeywords)),
-  ]);
-  out.Seasonings = out.Seasonings.filter((i) => !includesAny(i, sauceKeywords));
-
-  // Split some grains from Pasta & Grains if misfiled
-  const grainKeywords = ['rice','quinoa','oats','barley','farro','millet','buckwheat'];
-  out.Grains = uniqueSorted([...out.Grains, ...out.Pasta.filter((i) => includesAny(i, grainKeywords))]);
-  out.Pasta = out.Pasta.filter((i) => !includesAny(i, grainKeywords));
-
-  // Move breads if present in grains/pastas by mistake
-  const breadKeywords = ['bread','tortilla','pita','baguette','bun','roll','naan'];
-  out.Breads = uniqueSorted([...out.Breads, ...out.Pasta.filter((i) => includesAny(i, breadKeywords))]);
-  out.Pasta = out.Pasta.filter((i) => !includesAny(i, breadKeywords));
-
-  // Dairy from produce/seasonings if misfiled
-  const dairyKeywords = ['milk','cheese','butter','yogurt','cream'];
-  out.Dairy = uniqueSorted([...out.Dairy, ...out.Produce.filter((i) => includesAny(i, dairyKeywords))]);
-  out.Produce = out.Produce.filter((i) => !includesAny(i, dairyKeywords));
-
-  // Non-perishables: basic heuristic
-  const nonPerishKeywords = ['canned','broth','stock','peanut butter','jar'];
-  out['Non-Perishable Items'] = uniqueSorted([
-    ...out['Non-Perishable Items'],
-    ...out.Produce.filter((i) => includesAny(i, nonPerishKeywords)),
-  ]);
-  out.Produce = out.Produce.filter((i) => !includesAny(i, nonPerishKeywords));
-
-  return out;
-}
-
-function includesAny(text: string, set: string[]) {
-  const t = text.toLowerCase();
-  return set.some((k) => t.includes(k));
-}
-
-function fillDefaults(current: Record<string, string[]>) {
-  const next = { ...current };
-  for (const [section, def] of Object.entries(DEFAULTS)) {
-    if ((next as any)[section] && (next as any)[section].length === 0) {
-      (next as any)[section] = def.slice();
-    }
-  }
-  if (next.Produce.length === 0) next.Produce = DEFAULTS.Produce || KNOWN_MAP.Produce || [];
-  return next;
-}
-
-// Build a list of additional ingredients to show in the "More ingredients" dropdown
-function moreListFor(section: string, current: string[] = []) {
-  // Only suggest items relevant to the current section
-  const same = [
-    ...(((KNOWN_MAP as any)[section] as string[]) || []),
-    ...(((DEFAULTS as any)[section] as string[]) || []),
-  ];
-  const norm = (s: string) => capitalize((s || '').trim());
-  const selectedLower = new Set((current || []).map((s) => norm(s).toLowerCase()));
-  const seenLower = new Set<string>();
-  const out: string[] = [];
-  for (const it of same) {
-    const c = norm(it);
-    const cl = c.toLowerCase();
-    if (selectedLower.has(cl)) continue; // hide if already selected
-    if (seenLower.has(cl)) continue; // de-dup
-    seenLower.add(cl);
-    out.push(c);
-  }
-  return out.slice(0, 30);
-}
-
-// Ensure defaults are included for any empty section at save time
-function ensureDefaultsOnSave(current: Record<string, string[]>) {
-  const next: Record<string, string[]> = { ...current };
-  for (const key of Object.keys(KNOWN_MAP)) {
-    const k = key as keyof typeof KNOWN_MAP;
-    const arr = (next as any)[k] as string[] | undefined;
-    if (!arr || arr.length === 0) {
-      (next as any)[k] = [
-        ...((((DEFAULTS as any)[k] as string[]) || []) as string[]),
-      ];
-    }
-  }
-  return next;
-}
-
-async function safeUpsertLibrary(userId: string, updated: Record<string, string[]>) {
-  const fullPayload: any = {
-    user_id: userId,
-    seasonings: updated.Seasonings,
-    produce: updated.Produce,
-    proteins: updated.Proteins,
-    pastas: updated.Pasta,
-    equipment: updated.Equipment,
-    grains: updated.Grains,
-    breads: updated.Breads,
-    sauces_condiments: updated['Sauces/Condiments'],
-    dairy: updated.Dairy,
-    non_perishables: updated['Non-Perishable Items'],
-    updated_at: new Date().toISOString(),
-  };
-  try {
-    await supabase.from('user_library').upsert(fullPayload, { onConflict: 'user_id' });
-    // Maintain legacy compatibility so older reads still see data
-    await supabase.from('user_selections').upsert({
-      user_id: userId,
-      seasonings: updated.Seasonings,
-      vegetables: updated.Produce,
-      entrees: updated.Proteins,
-      pastas: updated.Pasta,
-      equipment: updated.Equipment,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' });
-  } catch (_) {
-    await supabase.from('user_library').upsert({
-      user_id: userId,
-      seasonings: updated.Seasonings,
-      vegetables: updated.Produce,
-      proteins: updated.Proteins,
-      pastas: updated.Pasta,
-      equipment: updated.Equipment,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' });
-  }
-}
+const uniqueSorted = (items: string[]) => Array.from(new Set(items)).sort((a, b) => a.localeCompare(b));
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFF' },
-  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: '#2C3E50' },
-  headerSubtitle: { fontSize: 14, color: '#5A6C7D', marginTop: 4 },
-  content: { padding: 20 },
-  section: { marginBottom: 20 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#2C3E50', marginBottom: 8 },
-  addRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  input: { flex: 1, borderWidth: 2, borderColor: '#E1E8ED', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
-  addButton: { backgroundColor: '#FF6B35', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12 },
-  addButtonText: { color: '#FFF', fontWeight: '800' },
-  suggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  suggestionChip: { borderWidth: 1, borderColor: '#E1E8ED', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#FFF' },
-  suggestionText: { color: '#2C3E50', fontSize: 14, fontWeight: '600' },
-  dropdownHeader: { marginTop: 6, marginBottom: 6 },
-  dropdownHeaderText: { color: '#2C3E50', fontSize: 14, fontWeight: '700' },
-  defaultsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 6 },
-  defaultChip: { borderWidth: 1, borderColor: '#E1E8ED', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#FFF' },
-  defaultChipSelected: { borderColor: '#4ECDC4', backgroundColor: '#EFFFFD' },
-  defaultChipText: { color: '#2C3E50', fontWeight: '600' },
-  defaultChipTextSelected: { color: '#0B6B64' },
-  expandAll: { marginTop: 8, alignSelf: 'flex-start' },
-  expandAllText: { color: '#4ECDC4', fontWeight: '800' },
-  itemsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  itemChip: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#E1E8ED', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#FFF' },
-  itemText: { color: '#2C3E50', fontWeight: '600' },
-  removeText: { color: '#E53E3E', fontWeight: '800', marginLeft: 2, fontSize: 16 },
-  primary: { backgroundColor: '#4ECDC4', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
-  primaryText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+  container: {
+    flex: 1,
+    backgroundColor: '#0B0B0F',
+  },
+  keyboardAvoider: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
+  },
+  headerCompact: {
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  headerTitleCompact: {
+    fontSize: 22,
+    marginBottom: 0,
+  },
+  headerSubtitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: '#A6A6B2',
+  },
+  summaryCard: {
+    marginHorizontal: 24,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: '#14141B',
+    borderWidth: 1,
+    borderColor: '#1F1F2A',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  summaryCardCompact: {
+    paddingVertical: 12,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  summaryDescription: {
+    fontSize: 14,
+    color: '#88889B',
+    maxWidth: '80%',
+  },
+  statusBadge: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignSelf: 'flex-start',
+    flexShrink: 1,
+    marginLeft: 12,
+    minWidth: 140,
+    maxWidth: '65%',
+  },
+  statusBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#07070A',
+    textAlign: 'center',
+  },
+  statusPending: {
+    backgroundColor: '#FFC857',
+  },
+  statusReady: {
+    backgroundColor: '#4ADE80',
+  },
+  statusNeutral: {
+    backgroundColor: '#3F3F52',
+  },
+  loaderContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 96,
+  },
+  sectionCard: {
+    backgroundColor: '#13131C',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#1F1F2A',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  sectionMeta: {
+    fontSize: 13,
+    color: '#828297',
+    marginTop: 4,
+  },
+  sectionCollapse: {
+    fontSize: 24,
+    color: '#5F5FA3',
+    paddingHorizontal: 4,
+  },
+  subSectionHeader: {
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  subSectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9A9AC2',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2A2A3C',
+    backgroundColor: '#181824',
+  },
+  chipGhost: {
+    backgroundColor: 'transparent',
+  },
+  chipActive: {
+    borderColor: '#6366F1',
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+  },
+  chipText: {
+    color: '#D6D6E7',
+    fontSize: 14,
+  },
+  chipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  customGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  customChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#2A2A3C',
+  },
+  customChipText: {
+    color: '#F8F8FF',
+    marginRight: 6,
+  },
+  customChipRemove: {
+    color: '#FF8181',
+    fontWeight: '700',
+  },
+  addRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  addInput: {
+    flex: 1,
+    minHeight: 48,
+    backgroundColor: '#161623',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#1F1F2A',
+    fontSize: 15,
+  },
+  addButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  primaryButton: {
+    margin: 24,
+    marginTop: 12,
+    borderRadius: 16,
+    backgroundColor: '#6366F1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+  },
+  primaryButtonDisabled: {
+    backgroundColor: '#3D3D57',
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });

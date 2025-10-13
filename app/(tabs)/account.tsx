@@ -1,11 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity, Alert, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import type { DietaryKey, DietaryPrefs } from '@/lib/dietary';
-import { DIETARY_KEYS, DIETARY_LIBRARY_RECOMMENDATIONS, DIETARY_OPTIONS, sanitizeDietaryPrefs } from '@/lib/dietary';
+import {
+  DIETARY_FEATURE_ENABLED,
+  DIETARY_KEYS,
+  DIETARY_LIBRARY_RECOMMENDATIONS,
+  DIETARY_OPTIONS,
+  sanitizeDietaryPrefs,
+} from '@/lib/dietary';
 import { router } from 'expo-router';
+import { useAlerts } from '@/contexts/AlertContext';
 
 type LibraryRow = {
   seasonings?: string[] | null;
@@ -60,6 +67,78 @@ const formatItem = (value: string): string => {
 
 const uniqueSorted = (items: string[]): string[] => {
   return Array.from(new Set(items.map(formatItem))).filter(Boolean).sort((a, b) => a.localeCompare(b));
+};
+
+const norm = (value: string) => String(value || '').trim().toLowerCase();
+
+const simpleMatch = (a: string, b: string) => {
+  const aa = norm(a).replace(/s\b/, '');
+  const bb = norm(b).replace(/s\b/, '');
+  return aa === bb || aa.includes(bb) || bb.includes(aa);
+};
+
+const stripMeasurement = (ing: string): string => {
+  if (!ing) return '';
+  const withoutBullet = ing.replace(/^[•\-\*\s]+/, '').trim();
+  const withoutMeasure = withoutBullet
+    .replace(/^[\d\s\/,.-]+(cups?|cup|tablespoons?|tbsp|teaspoons?|tsp|oz|ounce|ounces?|grams?|g|ml|milliliters?|l|liters?|lbs?|pounds?|kg|kilograms?|pinch|cloves?|cans?|pieces?|slices?|heads?|bunch(?:es)?|sticks?|dash|sprigs?|ears?|fillets?|filets?|packages?|pkgs?|bags?|handfuls?|bunches?|links?|strips?|stalks?|leaves?)?\.?\s*/i, '')
+    .trim();
+  const noParens = withoutMeasure.replace(/\([^)]*\)/g, '').trim();
+  const primary = noParens.split(/[;,]/)[0]?.trim() || '';
+  if (!primary) return withoutMeasure || withoutBullet || ing;
+
+  const descriptorSet = new Set([
+    'chopped',
+    'fresh',
+    'finely',
+    'coarsely',
+    'roughly',
+    'diced',
+    'minced',
+    'sliced',
+    'shredded',
+    'grated',
+    'optional',
+    'softened',
+    'peeled',
+    'seeded',
+    'halved',
+    'quartered',
+    'divided',
+    'plus',
+    'more',
+    'serving',
+    'servings',
+    'taste',
+    'room',
+    'temperature',
+    'warm',
+    'cold',
+    'extra',
+    'virgin',
+    'drained',
+    'rinsed',
+    'patted',
+    'dry',
+    'small',
+    'medium',
+  ]);
+
+  const words = primary.split(/\s+/).filter(Boolean);
+  const filtered: string[] = [];
+  words.forEach((word) => {
+    const lower = word.toLowerCase();
+    if (descriptorSet.has(lower)) {
+      return;
+    }
+    filtered.push(word);
+  });
+
+  const cleaned = filtered.join(' ').trim();
+  if (cleaned) return cleaned;
+
+  const fallback = words.length > 0 ? words[words.length - 1] : '';
+  return fallback || primary || withoutMeasure || withoutBullet || ing;
 };
 
 const buildLibraryPayload = (row: LibraryRow | null | undefined): NormalizedLibrary => {
@@ -137,55 +216,90 @@ const ensureLibraryCoverage = async (userId: string, prefs: DietaryPrefs) => {
 
 export default function AccountScreen() {
   const { user, signOut } = useAuth();
-  const [strictMode, setStrictMode] = useState(false);
-  const [dietary, setDietary] = useState<DietaryPrefs>(sanitizeDietaryPrefs({}));
-  const [saving, setSaving] = useState(false);
+  const userId = user?.id ?? null;
+  const [dietary, setDietary] = useState<DietaryPrefs>(DIETARY_FEATURE_ENABLED ? sanitizeDietaryPrefs({}) : {});
   const [shoppingMissingCount, setShoppingMissingCount] = useState(0);
+  const {
+    shoppingBadge,
+    shoppingDelta,
+    cookedDelta,
+    pendingShopping,
+    pendingCooked,
+    markShoppingSeen,
+    markCookedSeen,
+  } = useAlerts();
   const noneSelected = DIETARY_KEYS.every((key) => !dietary[key]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     (async () => {
       const { data } = await supabase
         .from('account_prefs')
-        .select('strict_mode, dietary')
-        .eq('user_id', user.id)
+        .select('dietary')
+        .eq('user_id', userId)
         .maybeSingle();
       if (data) {
-        setStrictMode(!!data.strict_mode);
-        setDietary(sanitizeDietaryPrefs(data.dietary));
+        if (DIETARY_FEATURE_ENABLED) setDietary(sanitizeDietaryPrefs(data.dietary));
       }
     })();
-  }, [user?.id]);
+  }, [userId]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
+    let cancelled = false;
+
     (async () => {
       const [{ data: saved }, { data: lib }] = await Promise.all([
-        supabase.from('saved_dishes').select('ingredients').eq('user_id', user.id),
-        supabase.from('user_library').select('*').eq('user_id', user.id).maybeSingle(),
+        supabase.from('saved_dishes').select('ingredients,suggested_sides').eq('user_id', userId),
+        supabase.from('user_library').select('*').eq('user_id', userId).maybeSingle(),
       ]);
-      const library = (lib as any) || {};
-      const libSet = new Set<string>();
-      Object.values(library).forEach((arr: any) => {
-        if (Array.isArray(arr)) arr.forEach((x: string) => libSet.add(String(x || '').trim().toLowerCase()));
-      });
-      const norm = (s: string) => String(s || '').trim().toLowerCase();
-      const simpleMatch = (a: string, b: string) => {
-        const aa = norm(a).replace(/s\b/, '');
-        const bb = norm(b).replace(/s\b/, '');
-        return aa === bb || aa.includes(bb) || bb.includes(aa);
-      };
-      const needed = new Set<string>();
-      (saved as any[] || []).forEach((row) => {
-        (row.ingredients || []).forEach((ing: string) => {
-          const inLib = Array.from(libSet).some((l) => simpleMatch(ing, l));
-          if (!inLib) needed.add(ing);
+
+      if (cancelled) return;
+
+      const libraryPayload = buildLibraryPayload(lib as LibraryRow | null | undefined);
+      const libraryItems: string[] = [];
+      const libraryLookup = new Set<string>();
+      Object.values(libraryPayload).forEach((list) => {
+        list.forEach((item) => {
+          libraryItems.push(item);
+          libraryLookup.add(norm(item));
         });
       });
-      setShoppingMissingCount(needed.size);
+
+      const needed = new Set<string>();
+      const appendIfNeeded = (rawIng?: string | null) => {
+        if (!rawIng) return;
+        const baseName = stripMeasurement(rawIng);
+        const candidate = baseName || rawIng;
+        const formatted = formatItem(candidate);
+        if (!formatted) return;
+
+        if (libraryItems.length === 0) {
+          needed.add(formatted);
+          return;
+        }
+
+        const candidateKey = norm(candidate);
+        if (libraryLookup.has(candidateKey)) return;
+
+        const exists = libraryItems.some((stored) => simpleMatch(candidate, stored));
+        if (!exists) needed.add(formatted);
+      };
+
+      (saved as { ingredients?: string[]; suggested_sides?: string[] }[] | null | undefined)?.forEach((row) => {
+        row?.ingredients?.forEach((item) => appendIfNeeded(item));
+        row?.suggested_sides?.forEach((item) => appendIfNeeded(item));
+      });
+
+      if (!cancelled) {
+        setShoppingMissingCount(needed.size);
+      }
     })();
-  }, [user?.id]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const toggleDietary = (key: DietaryKey) => {
     setDietary((current) => {
@@ -197,82 +311,74 @@ export default function AccountScreen() {
     });
   };
 
-  const save = async () => {
-    if (!user) return;
-    try {
-      setSaving(true);
-      const clean = sanitizeDietaryPrefs(dietary);
-      await supabase.from('account_prefs').upsert({
-        user_id: user.id,
-        strict_mode: strictMode,
-        dietary: clean,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
-      await ensureLibraryCoverage(user.id, clean);
-      Alert.alert('Saved', 'Your preferences have been saved.');
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to save preferences');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>Account</Text>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Dish Creation Mode</Text>
-          <View style={styles.rowBetween}>
-            <Text style={styles.label}>Strict mode</Text>
-            <Switch value={strictMode} onValueChange={setStrictMode} />
-          </View>
-          <Text style={styles.helper}>
-            Strict uses only your Library items plus pantry staples. Loose prefers your Library but allows reasonable additions.
-          </Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Dietary Restrictions</Text>
-          <View style={styles.rowBetween}>
-            <Text style={styles.label}>None (default)</Text>
-            <Switch
-              value={noneSelected}
-              onValueChange={(value) => {
-                if (value) {
-                  setDietary({});
-                }
-              }}
-            />
-          </View>
-          <Text style={styles.helper}>Leave "None" selected to keep your full Library available.</Text>
-          {DIETARY_OPTIONS.map(({ key, label, helper }) => (
-            <View key={key} style={styles.prefRow}>
-              <View style={styles.prefTextGroup}>
-                <Text style={styles.label}>{label}</Text>
-                <Text style={styles.prefHelper}>{helper}</Text>
-              </View>
-              <Switch value={!!dietary[key]} onValueChange={() => toggleDietary(key)} />
+        {DIETARY_FEATURE_ENABLED ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Dietary Restrictions</Text>
+            <View style={styles.rowBetween}>
+              <Text style={styles.label}>None (default)</Text>
+              <Switch
+                value={noneSelected}
+                onValueChange={(value) => {
+                  if (value) {
+                    setDietary({});
+                  }
+                }}
+              />
             </View>
-          ))}
-          <Text style={styles.helper}>Selected preferences hide conflicting library items and add a few starter staples automatically.</Text>
-        </View>
+            <Text style={styles.helper}>Leave "None" selected to keep your full Library available.</Text>
+            {DIETARY_OPTIONS.map(({ key, label, helper }) => (
+              <View key={key} style={styles.prefRow}>
+                <View style={styles.prefTextGroup}>
+                  <Text style={styles.label}>{label}</Text>
+                  <Text style={styles.prefHelper}>{helper}</Text>
+                </View>
+                <Switch value={!!dietary[key]} onValueChange={() => toggleDietary(key)} />
+              </View>
+            ))}
+            <Text style={styles.helper}>Selected preferences hide conflicting library items and add a few starter staples automatically.</Text>
+          </View>
+        ) : null}
 
-        <TouchableOpacity style={[styles.primary, saving && { opacity: 0.7 }]} disabled={saving} onPress={save}>
-          <Text style={styles.primaryText}>{saving ? 'Saving…' : 'Save Preferences'}</Text>
+        <TouchableOpacity
+          style={styles.secondary}
+          onPress={() => {
+            markCookedSeen();
+            router.push('/cooked' as any);
+          }}
+        >
+          <View style={styles.secondaryContent}>
+            <Text style={styles.secondaryText}>View Cooked Dishes</Text>
+            {pendingCooked ? (
+              <View style={styles.alertBadge}>
+                <Text style={styles.alertBadgeText}>{Math.min(cookedDelta || 1, 99)}</Text>
+              </View>
+            ) : null}
+          </View>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.secondary} onPress={() => router.push('/cooked' as any)}>
-          <Text style={styles.secondaryText}>View Cooked Dishes</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.secondary} onPress={() => router.push('/shopping-list' as any)}>
-          <Text style={styles.secondaryText}>View Shopping List{shoppingMissingCount > 0 ? ` (${shoppingMissingCount})` : ''}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.secondary} onPress={() => router.push('/subscriptions' as any)}>
-          <Text style={styles.secondaryText}>Subscriptions</Text>
+        <TouchableOpacity
+          style={styles.secondary}
+          onPress={() => {
+            markShoppingSeen();
+            router.push('/shopping-list' as any);
+          }}
+        >
+          <View style={styles.secondaryContent}>
+            <Text style={styles.secondaryText}>
+              View Shopping List
+              {shoppingMissingCount > 0 ? ` (${shoppingMissingCount})` : ''}
+            </Text>
+            {pendingShopping ? (
+              <View style={styles.alertBadge}>
+                <Text style={styles.alertBadgeText}>{Math.min(shoppingDelta || shoppingBadge || 1, 99)}</Text>
+              </View>
+            ) : null}
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.secondary} onPress={() => router.push('/faq' as any)}>
@@ -282,6 +388,17 @@ export default function AccountScreen() {
         <TouchableOpacity style={[styles.secondary, styles.logout]} onPress={signOut}>
           <Text style={[styles.secondaryText, styles.logoutText]}>Log Out</Text>
         </TouchableOpacity>
+
+        <View style={styles.supportCard}>
+          <Text style={styles.supportTitle}>Need help?</Text>
+          <Text style={styles.supportCopy}>Questions or issues? Reach our team anytime.</Text>
+          <TouchableOpacity
+            style={styles.supportButton}
+            onPress={() => Linking.openURL('mailto:pantrypalooza45@gmail.com')}
+          >
+            <Text style={styles.supportButtonText}>Email Support</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -303,6 +420,42 @@ const styles = StyleSheet.create({
   primaryText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
   secondary: { borderWidth: 2, borderColor: '#E1E8ED', backgroundColor: '#FFF', paddingVertical: 12, borderRadius: 12, alignItems: 'center', marginTop: 12 },
   secondaryText: { color: '#2C3E50', fontSize: 15, fontWeight: '700' },
+  secondaryContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logout: { borderColor: '#FFE1D6', backgroundColor: '#FFF4ED' },
   logoutText: { color: '#FF6B35' },
+  alertBadge: {
+    backgroundColor: '#FF6B35',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    minWidth: 22,
+    alignItems: 'center',
+  },
+  alertBadgeText: {
+    color: '#FFF',
+    fontWeight: '800',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  supportCard: {
+    marginTop: 20,
+    borderWidth: 2,
+    borderColor: '#E1E8ED',
+    borderRadius: 14,
+    backgroundColor: '#FFF',
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  supportTitle: { fontSize: 16, fontWeight: '800', color: '#2C3E50' },
+  supportCopy: { color: '#5A6C7D', fontSize: 13 },
+  supportButton: {
+    marginTop: 4,
+    backgroundColor: '#4ECDC4',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignSelf: 'center',
+  },
+  supportButtonText: { color: '#FFF', fontWeight: '800' },
 });

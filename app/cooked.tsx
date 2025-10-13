@@ -79,12 +79,10 @@ export default function CookedScreen() {
       return acc + (v != null ? v : 0);
     }, 0);
 
-  const weekCalories = sumBy(week, (d) => numeric(d.calories_est));
   const weekCost = sumBy(week, (d) => numeric(d.cost_est));
   const weekRestaurant = sumBy(week, restaurantFor);
   const weekSavings = sumBy(week, savingsFor);
 
-  const monthCalories = sumBy(month, (d) => numeric(d.calories_est));
   const monthCost = sumBy(month, (d) => numeric(d.cost_est));
   const monthRestaurant = sumBy(month, restaurantFor);
   const monthSavings = sumBy(month, savingsFor);
@@ -110,14 +108,12 @@ export default function CookedScreen() {
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>This Week</Text>
             <Text style={styles.summaryValue}>{week.length} dishes</Text>
-            <Text style={styles.summaryMeta}>~{Math.round(weekCalories)} kcal</Text>
             <Text style={styles.summaryMeta}>At home ${weekCost.toFixed(2)} vs out ${weekRestaurant.toFixed(2)}</Text>
             <Text style={styles.summaryMeta}>Saved ${weekSavings.toFixed(2)}</Text>
           </View>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>This Month</Text>
             <Text style={styles.summaryValue}>{month.length} dishes</Text>
-            <Text style={styles.summaryMeta}>~{Math.round(monthCalories)} kcal</Text>
             <Text style={styles.summaryMeta}>At home ${monthCost.toFixed(2)} vs out ${monthRestaurant.toFixed(2)}</Text>
             <Text style={styles.summaryMeta}>Saved ${monthSavings.toFixed(2)}</Text>
           </View>
@@ -163,7 +159,6 @@ export default function CookedScreen() {
                         <Text style={styles.statBadge}>Cost ${numeric(dish.cost_est)?.toFixed(2) ?? '—'}</Text>
                         <Text style={styles.statBadge}>Out ${restaurantFor(dish)?.toFixed(2) ?? '—'}</Text>
                         <Text style={styles.statBadge}>Saved ${savingsFor(dish)?.toFixed(2) ?? '—'}</Text>
-                        <Text style={styles.statBadge}>~{Math.round(numeric(dish.calories_est) ?? 0)} kcal</Text>
                       </View>
                       {ings.length > 0 && (
                         <View style={styles.section}>

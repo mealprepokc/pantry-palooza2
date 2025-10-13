@@ -84,6 +84,18 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Status: todo
   - Notes: Validate and tag custom entries to improve future suggestions.
 
+- [ ] Rate-limit dish regeneration & track AI spend
+  - Impact: High
+  - Effort: Medium
+  - Status: todo
+  - Notes: Enforce ~4 regenerations per meal type per 12hrs server-side, log usage for analytics, and plan for OpenAI quota increases (100k MAU worst-case ≈ $60k/month) plus Supabase scaling/queueing.
+
+- [ ] Stripe subscriptions integration (prep for paid loose mode)
+  - Impact: High
+  - Effort: Medium
+  - Status: todo
+  - Notes: Create Stripe project, configure products/prices, add webhook endpoint, secure API keys, build `/subscriptions` UI, and gate loose dish mode for paid users.
+
 - [x] Breakfast/Lunch/Dinner selection to tailor results
   - Impact: Medium
   - Effort: Medium
@@ -237,6 +249,12 @@ This roadmap groups tasks by phase (impact-first progression) and annotates each
   - Effort: Easy
   - Status: todo
   - Notes: Add GTM container to Expo web shell and configure GA4 tag. Track custom events (generate_clicked, dish_saved, dish_unsaved, library_item_added) via dataLayer; add GA4 native SDK later for iOS/Android if desired.
+
+- [ ] Restore calorie estimates in dish flows
+  - Impact: Medium
+  - Effort: Medium
+  - Status: blocked
+  - Notes: Removed `calories_est` usage from UI and Supabase inserts due to schema cache mismatch errors (“calorie_est not found”). To re-enable, ensure migrations add `calories_est numeric` to `saved_dishes`/`cooked_dishes`, run `npx supabase db push`, and confirm Expo clients pull the latest bundle (clear Metro cache). Reintroduce estimates once Supabase reflects the new column reliably.
 
 - [ ] Appliance profile (user equipment)
   - Impact: Medium

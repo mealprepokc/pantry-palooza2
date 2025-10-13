@@ -4,11 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { router } from 'expo-router';
+import { useAlerts } from '@/contexts/AlertContext';
 
 interface SavedDishRow {
   id: string;
   title: string;
   ingredients: string[] | null;
+  suggested_sides: string[] | null;
 }
 
 interface UserLibraryRow {
@@ -36,11 +38,75 @@ function simpleMatch(a: string, b: string) {
 
 function stripMeasurement(ing: string): string {
   if (!ing) return '';
-  const withoutBullet = ing.replace(/^[•\-*\s]+/, '').trim();
-  const cleaned = withoutBullet
-    .replace(/^[\d\s\/.,-]+(cups?|cup|tablespoons?|tbsp|teaspoons?|tsp|oz|ounce|ounces?|grams?|g|ml|milliliters?|l|liters?|lbs?|pounds?|kg|kilograms?|pinch|cloves?|cans?|pieces?|slices?|heads?|bunch(?:es)?|sticks?|dash|sprigs?|ears?|fillets?|filets?|packages?|pkgs?|bags?|handfuls?|bunches?|links?|strips?|stalks?|leaves?)?\.?\s*/i, '')
+  const withoutBullet = ing.replace(/^[•\-\*\s]+/, '').trim();
+  const withoutMeasure = withoutBullet
+    .replace(/^[\d\s\/,.-]+(cups?|cup|tablespoons?|tbsp|teaspoons?|tsp|oz|ounce|ounces?|grams?|g|ml|milliliters?|l|liters?|lbs?|pounds?|kg|kilograms?|pinch|cloves?|cans?|pieces?|slices?|heads?|bunch(?:es)?|sticks?|dash|sprigs?|ears?|fillets?|filets?|packages?|pkgs?|bags?|handfuls?|bunches?|links?|strips?|stalks?|leaves?)?\.?\s*/i, '')
     .trim();
-  return cleaned || withoutBullet || ing;
+  const noParens = withoutMeasure.replace(/\([^)]*\)/g, '').trim();
+  const primary = noParens.split(/[;,]/)[0]?.trim() || '';
+  const descriptorSet = new Set([
+    'chopped',
+    'fresh',
+    'finely',
+    'coarsely',
+    'roughly',
+    'diced',
+    'minced',
+    'sliced',
+    'shredded',
+    'grated',
+    'optional',
+    'softened',
+    'peeled',
+    'seeded',
+    'halved',
+    'quartered',
+    'divided',
+    'plus',
+    'more',
+    'serving',
+    'servings',
+    'taste',
+    'room',
+    'temperature',
+    'warm',
+    'cold',
+    'extra',
+    'virgin',
+    'drained',
+    'rinsed',
+    'patted',
+    'dry',
+    'small',
+    'medium',
+  ]);
+
+  const words = primary.split(/\s+/).filter(Boolean);
+  const filtered: string[] = [];
+  words.forEach((word) => {
+    const lower = word.toLowerCase();
+    if (descriptorSet.has(lower)) {
+      return;
+    }
+    filtered.push(word);
+  });
+
+  const cleaned = filtered.join(' ').trim();
+  if (cleaned) return cleaned;
+
+  const fallback = words.length > 0 ? words[words.length - 1] : '';
+  return fallback || primary || withoutMeasure || withoutBullet || ing;
+}
+
+function formatIngredientName(ing: string): string {
+  const clean = String(ing || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!clean) return '';
+  return clean
+    .split(' ')
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1).toLowerCase() : part))
+    .join(' ');
 }
 
 function groupFor(ing: string): string {
@@ -57,6 +123,7 @@ function groupFor(ing: string): string {
 
 export default function ShoppingListScreen() {
   const { user } = useAuth();
+  const { pendingShopping, markShoppingSeen } = useAlerts();
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState<Record<string, string[]>>({});
 
@@ -65,7 +132,10 @@ export default function ShoppingListScreen() {
     (async () => {
       setLoading(true);
       const [{ data: saved }, { data: lib }] = await Promise.all([
-        supabase.from('saved_dishes').select('id,title,ingredients').eq('user_id', user.id),
+        supabase
+          .from('saved_dishes')
+          .select('id,title,ingredients,suggested_sides')
+          .eq('user_id', user.id),
         supabase.from('user_library').select('*').eq('user_id', user.id).maybeSingle(),
       ]);
       const library = (lib as UserLibraryRow) || {};
@@ -73,16 +143,26 @@ export default function ShoppingListScreen() {
       Object.values(library).forEach((arr) => {
         if (Array.isArray(arr)) arr.forEach((x) => libSet.add(norm(x)));
       });
-      const needed = new Set<string>();
-      (saved as SavedDishRow[] || []).forEach((row) => {
-        (row.ingredients || []).forEach((ing) => {
-          const normalized = stripMeasurement(ing);
-          const inLib = Array.from(libSet).some((l) => simpleMatch(ing, l));
-          if (!inLib) needed.add(normalized);
-        });
+      const needed = new Map<string, string>();
+      const appendIfNeeded = (rawIng: string) => {
+        const baseName = stripMeasurement(rawIng);
+        const normalizedKey = norm(baseName);
+        if (!normalizedKey) return;
+        const pretty = formatIngredientName(baseName);
+        if (!pretty) return;
+        const inLib = Array.from(libSet).some((l) => simpleMatch(baseName, l));
+        if (inLib) return;
+        const alreadyTracked = Array.from(needed.keys()).some((key) => simpleMatch(baseName, key));
+        if (alreadyTracked) return;
+        needed.set(normalizedKey, pretty);
+      };
+
+      ((saved as SavedDishRow[]) || []).forEach((row) => {
+        (row.ingredients || []).forEach(appendIfNeeded);
+        (row.suggested_sides || []).forEach(appendIfNeeded);
       });
       const grouped: Record<string, string[]> = {};
-      Array.from(needed).forEach((ing) => {
+      Array.from(needed.values()).forEach((ing) => {
         const g = groupFor(ing);
         grouped[g] = grouped[g] || [];
         if (!grouped[g].some((x) => simpleMatch(x, ing))) grouped[g].push(ing);
@@ -93,6 +173,12 @@ export default function ShoppingListScreen() {
       setLoading(false);
     })();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (pendingShopping) {
+      markShoppingSeen();
+    }
+  }, [pendingShopping, markShoppingSeen]);
 
   if (loading) {
     return (
@@ -124,9 +210,6 @@ export default function ShoppingListScreen() {
               {missing[g].map((ing) => (
                 <View key={ing} style={styles.row}>
                   <Text style={styles.ing}>{ing}</Text>
-                  <TouchableOpacity style={styles.buyBtn} onPress={() => { /* placeholder for affiliate */ }}>
-                    <Text style={styles.buyText}>Buy</Text>
-                  </TouchableOpacity>
                 </View>
               ))}
             </View>
@@ -150,8 +233,6 @@ const styles = StyleSheet.create({
   emptyText: { color: '#5A6C7D', marginTop: 8 },
   section: { marginTop: 16 },
   sectionTitle: { fontSize: 16, fontWeight: '800', color: '#2C3E50', marginBottom: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EEE' },
-  ing: { color: '#2C3E50', fontSize: 15, fontWeight: '600', flex: 1, paddingRight: 12 },
-  buyBtn: { borderWidth: 2, borderColor: '#E1E8ED', borderRadius: 12, paddingVertical: 6, paddingHorizontal: 12 },
-  buyText: { color: '#2C3E50', fontWeight: '700' },
+  row: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  ing: { color: '#2C3E50', fontSize: 15, fontWeight: '600' },
 });
