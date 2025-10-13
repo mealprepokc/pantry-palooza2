@@ -36,7 +36,32 @@ function simpleMatch(a: string, b: string) {
   return aa === bb || aa.includes(bb) || bb.includes(aa);
 }
 
-function stripMeasurement(ing: string): string {
+const INGREDIENT_KEYS = ['name', 'title', 'text', 'label', 'ingredient', 'value'] as const;
+
+function toIngredientString(raw: unknown): string {
+  if (!raw) return '';
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      const str = toIngredientString(entry);
+      if (str) return str;
+    }
+    return '';
+  }
+  if (typeof raw === 'object') {
+    for (const key of INGREDIENT_KEYS) {
+      const candidate = (raw as Record<string, unknown>)[key];
+      if (typeof candidate === 'string' && candidate.trim().length > 0) {
+        return candidate;
+      }
+    }
+    return '';
+  }
+  return String(raw);
+}
+
+function stripMeasurement(rawIng: unknown): string {
+  const ing = toIngredientString(rawIng);
   if (!ing) return '';
   const withoutBullet = ing.replace(/^[•\-\*\s]+/, '').trim();
   const withoutMeasure = withoutBullet
@@ -144,7 +169,7 @@ export default function ShoppingListScreen() {
         if (Array.isArray(arr)) arr.forEach((x) => libSet.add(norm(x)));
       });
       const needed = new Map<string, string>();
-      const appendIfNeeded = (rawIng: string) => {
+      const appendIfNeeded = (rawIng: unknown) => {
         const baseName = stripMeasurement(rawIng);
         const normalizedKey = norm(baseName);
         if (!normalizedKey) return;

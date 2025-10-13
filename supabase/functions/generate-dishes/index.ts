@@ -86,16 +86,18 @@ For each dish, provide:
 5. Detailed step-by-step preparation and cooking instructions, broken into an array of 4-6 clear steps
 6. A calories_per_serving number (estimated kcal per serving)
 
-Return the response as a JSON array with exactly 10 dishes. Each dish should have this structure:
-
-{
-  "title": "Dish Name",
-  "cuisine_type": "Cuisine Type",
-  "cooking_time": "30 mins",
-  "ingredients": ["2 cups ...", "1 lb ...", ...],
-  "instructions": ["Step 1", "Step 2", ...],
-  "calories_per_serving": 520
-}
+Return the response strictly as a JSON object of the form {
+  "dishes": [
+    {
+      "title": "Dish Name",
+      "cuisine_type": "Cuisine Type",
+      "cooking_time": "30 mins",
+      "ingredients": ["2 cups ...", "1 lb ...", ...],
+      "instructions": ["Step 1", "Step 2", ...],
+      "calories_per_serving": 520
+    }
+  ]
+} where the dishes array contains exactly 10 entries.
 
 Make sure the dishes are creative, practical, and use the available equipment when relevant. Include cooking temperatures where relevant.`;
 
@@ -110,7 +112,7 @@ Make sure the dishes are creative, practical, and use the available equipment wh
         messages: [
           {
             role: 'system',
-            content: 'You are a helpful chef assistant that creates practical, delicious recipes. Always respond with valid JSON arrays.',
+            content: 'You are a helpful chef assistant that creates practical, delicious recipes. Always respond with valid JSON following the provided schema.',
           },
           {
             role: 'user',
@@ -119,6 +121,43 @@ Make sure the dishes are creative, practical, and use the available equipment wh
         ],
         temperature: 0.8,
         max_tokens: 6000,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'generate_dishes_response',
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['dishes'],
+              properties: {
+                dishes: {
+                  type: 'array',
+                  minItems: 10,
+                  maxItems: 10,
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['title', 'cuisine_type', 'cooking_time', 'ingredients', 'instructions', 'calories_per_serving'],
+                    properties: {
+                      title: { type: 'string' },
+                      cuisine_type: { type: 'string' },
+                      cooking_time: { type: 'string' },
+                      ingredients: {
+                        type: 'array',
+                        items: { type: 'string' },
+                      },
+                      instructions: {
+                        type: 'array',
+                        items: { type: 'string' },
+                      },
+                      calories_per_serving: { type: 'number' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       }),
     });
 
@@ -137,7 +176,12 @@ Make sure the dishes are creative, practical, and use the available equipment wh
 
     content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
-    const dishes = JSON.parse(content);
+    const parsed = JSON.parse(content);
+    const dishes = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { dishes?: unknown }).dishes)
+      ? (parsed as { dishes: unknown[] }).dishes
+      : [];
 
     const normalizeInstructions = (value: unknown): string[] => {
       if (!value) return [];
