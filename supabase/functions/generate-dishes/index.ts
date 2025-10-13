@@ -1,5 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined;
+  };
+  serve: (handler: (req: Request) => Response | Promise<Response>) => void;
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -62,9 +69,35 @@ Deno.serve(async (req: Request) => {
       ? `Lunch guidance: Aim for balanced, portable or quick dishes (salads, bowls, sandwiches, wraps, pastas). Use produce heavily; proteins can be lighter. Avoid heavy dinner-style stews unless clearly lunch-appropriate.`
       : `Dinner guidance: Heartier mains welcome. Favor proteins with sides, pastas, grains. Depth of flavor (roasting, searing, sauces) is encouraged while respecting the time constraint.`;
 
-    const prompt = `You are a creative chef AI. Generate exactly 15 unique and delicious ${mealType.toLowerCase()} dish ideas based on the following. Prioritize using the provided ingredients list.
-\n\nAvailable Ingredients: ${ingredientsList}\nAvailable Equipment: ${equipmentList || 'Any'}\nServings: ${servings}\n${timeNote}\n${strictnessNote}\n${mealGuidance}\n\nFor each dish, provide:\n1. A creative and appetizing dish title\n2. The cuisine type (e.g., Italian, Asian, Mexican, American, Mediterranean)\n3. Approximate cooking time formatted strictly as "NN mins" (numeric minutes only, e.g., "20 mins", "45 mins")\n4. A complete list of ingredients with MEASUREMENTS and UNITS, scaled for ${servings} servings (e.g., "2 cups chopped spinach", "1 lb chicken breast", "1 tbsp olive oil") while respecting the strictness rule\n5. Detailed step-by-step preparation and cooking instructions\n\nReturn the response as a JSON array with exactly 15 dishes. Each dish should have this structure:
-\n{\n  "title": "Dish Name",\n  "cuisine_type": "Cuisine Type",\n  "cooking_time": "30 mins",\n  "ingredients": ["2 cups ...", "1 lb ...", ...],\n  "instructions": "Detailed step-by-step instructions..."\n}\n\nMake sure the dishes are creative, practical, and use the available equipment when relevant. Include cooking temperatures where relevant.`;
+    const prompt = `You are a creative chef AI. Generate exactly 10 unique and delicious ${mealType.toLowerCase()} dish ideas based on the following. Prioritize using the provided ingredients list.
+
+Available Ingredients: ${ingredientsList}
+Available Equipment: ${equipmentList || 'Any'}
+Servings: ${servings}
+${timeNote}
+${strictnessNote}
+${mealGuidance}
+
+For each dish, provide:
+1. A creative and appetizing dish title
+2. The cuisine type (e.g., Italian, Asian, Mexican, American, Mediterranean)
+3. Approximate cooking time formatted strictly as "NN mins" (numeric minutes only, e.g., "20 mins", "45 mins")
+4. A complete list of ingredients with MEASUREMENTS and UNITS, scaled for ${servings} servings (e.g., "2 cups chopped spinach", "1 lb chicken breast", "1 tbsp olive oil") while respecting the strictness rule
+5. Detailed step-by-step preparation and cooking instructions, broken into an array of 4-6 clear steps
+6. A calories_per_serving number (estimated kcal per serving)
+
+Return the response as a JSON array with exactly 10 dishes. Each dish should have this structure:
+
+{
+  "title": "Dish Name",
+  "cuisine_type": "Cuisine Type",
+  "cooking_time": "30 mins",
+  "ingredients": ["2 cups ...", "1 lb ...", ...],
+  "instructions": ["Step 1", "Step 2", ...],
+  "calories_per_serving": 520
+}
+
+Make sure the dishes are creative, practical, and use the available equipment when relevant. Include cooking temperatures where relevant.`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -105,6 +138,48 @@ Deno.serve(async (req: Request) => {
     content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
     const dishes = JSON.parse(content);
+
+    const normalizeInstructions = (value: unknown): string[] => {
+      if (!value) return [];
+      if (Array.isArray(value)) {
+        return value
+          .flatMap((entry) => normalizeInstructions(entry))
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0);
+      }
+      if (typeof value === 'string') {
+        return value
+          .split(/\r?\n+/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+      }
+      if (typeof value === 'object') {
+        const textLike = (value as { steps?: unknown; text?: unknown }).text;
+        if (typeof textLike === 'string') return normalizeInstructions(textLike);
+        if (Array.isArray((value as { steps?: unknown }).steps)) return normalizeInstructions((value as { steps?: unknown }).steps);
+      }
+      return [String(value)].filter((entry) => entry.trim().length > 0);
+    };
+
+    const sanitizeCalories = (value: unknown): number | null => {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return null;
+      return Math.max(0, Math.round(num));
+    };
+
+    const normalizedDishes = (Array.isArray(dishes) ? dishes : [])
+      .slice(0, 10)
+      .map((dish: Record<string, unknown>) => {
+        const ingredients = Array.isArray(dish.ingredients) ? dish.ingredients : [];
+        return {
+          title: String(dish.title ?? dish.name ?? 'Untitled Dish'),
+          cuisine_type: String(dish.cuisine_type ?? dish.cuisineType ?? ''),
+          cooking_time: String(dish.cooking_time ?? dish.cook_time ?? dish.cookingTime ?? ''),
+          ingredients: ingredients.map((entry) => String(entry)).filter((entry) => entry.trim().length > 0),
+          instructions: normalizeInstructions(dish.instructions),
+          calories_per_serving: sanitizeCalories(dish.calories_per_serving ?? (dish as any)?.caloriesPerServing ?? (dish as any)?.calories),
+        };
+      });
 
     // --- Server-side cost estimation --------------------------------------
     // Lightweight price map ($ per base unit)
@@ -210,7 +285,7 @@ Deno.serve(async (req: Request) => {
       return Math.max(0, cost);
     }
 
-    const dishesWithCost = (Array.isArray(dishes) ? dishes : []).map((d: any) => {
+    const dishesWithCost = normalizedDishes.map((d) => {
       try {
         const lines: string[] = Array.isArray(d.ingredients) ? d.ingredients : [];
         const total = lines.reduce((sum, line) => sum + estimateLineCost(String(line)), 0);

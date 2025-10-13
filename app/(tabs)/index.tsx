@@ -14,15 +14,17 @@ import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '@/lib/supabase';
 import { isIngredientAllowed, type DietaryPrefs } from '@/lib/dietary';
 import { useAuth } from '@/contexts/AuthContext';
-import { GeneratedDish } from '@/types/database';
+import { GeneratedDish, GenerateDishesFunctionResponse } from '@/types/database';
 import { DishScorecard } from '@/components/DishScorecard';
+import type { DishSideSuggestion } from '@/types/generated';
 
 type MealType = 'Breakfast' | 'Lunch' | 'Dinner';
 
 const AGGREGATE = (dish: GeneratedDish) => {
   const parts: string[] = [];
   if (dish.title) parts.push(dish.title);
-  if (dish.instructions) parts.push(dish.instructions);
+  if (Array.isArray(dish.instructions)) parts.push(dish.instructions.join(' '));
+  else if (typeof dish.instructions === 'string') parts.push(dish.instructions);
   if (Array.isArray(dish.ingredients)) parts.push(dish.ingredients.join(' '));
   return parts.join(' ').toLowerCase();
 };
@@ -108,6 +110,52 @@ const applyMealTypeHeuristics = (dishes: GeneratedDish[], mealType: MealType): G
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const defaultSideSuggestions: DishSideSuggestion[] = [
+    {
+      name: 'Mixed Greens Salad',
+      why_it_works: 'Provides a fresh, crisp counterpoint to the main dish.',
+      estimated_ingredients: ['mixed greens', 'olive oil', 'lemon', 'salt', 'pepper'],
+      prep_style: 'cold',
+      profile: ['fresh', 'light'],
+      feasibility_rate: 0.8,
+      meal_type_fit: 0.7,
+      semantic_fit: 0.7,
+      dishSideScore: 0.75,
+    },
+    {
+      name: 'Garlic Bread',
+      why_it_works: 'Adds a warm, savory side that pairs with most hearty mains.',
+      estimated_ingredients: ['bread', 'garlic', 'butter', 'parsley'],
+      prep_style: 'hot',
+      profile: ['comfort', 'savory'],
+      feasibility_rate: 0.75,
+      meal_type_fit: 0.8,
+      semantic_fit: 0.65,
+      dishSideScore: 0.72,
+    },
+    {
+      name: 'Roasted Vegetables',
+      why_it_works: 'Adds color and balanced nutrition with minimal prep.',
+      estimated_ingredients: ['carrots', 'broccoli', 'olive oil', 'seasoning'],
+      prep_style: 'hot',
+      profile: ['healthy', 'savory'],
+      feasibility_rate: 0.78,
+      meal_type_fit: 0.82,
+      semantic_fit: 0.7,
+      dishSideScore: 0.76,
+    },
+    {
+      name: 'Herbed Rice',
+      why_it_works: 'Adds a hearty, fragrant side that soaks up sauces.',
+      estimated_ingredients: ['rice', 'butter', 'parsley', 'garlic'],
+      prep_style: 'hot',
+      profile: ['comfort', 'savory'],
+      feasibility_rate: 0.7,
+      meal_type_fit: 0.75,
+      semantic_fit: 0.68,
+      dishSideScore: 0.7,
+    },
+  ];
   // Library-backed selections
   const [seasonings, setSeasonings] = useState<string[]>([]);
   const [produce, setProduce] = useState<string[]>([]);
@@ -294,17 +342,48 @@ export default function HomeScreen() {
         throw error;
       }
 
-      if (data?.error) {
-        throw new Error(data.error);
+      if (!data) {
+        throw new Error('No data returned');
       }
 
-      // Client-side dietary filter as enforcement safeguard
-      const filtered = Array.isArray(data?.dishes)
-        ? data.dishes.filter((d: any) => {
-            const ings: string[] = Array.isArray(d.ingredients) ? d.ingredients : [];
-            return ings.every((ing) => isIngredientAllowed(String(ing), dietary));
-          })
-        : [];
+      const payload = data as GenerateDishesFunctionResponse;
+
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+
+      const dishesFromEdge = Array.isArray(payload.dishes) ? payload.dishes : [];
+
+      const normalized: GeneratedDish[] = dishesFromEdge.map((item) => {
+        const ingredients = Array.isArray(item.ingredients)
+          ? item.ingredients.map((entry) => String(entry).trim()).filter(Boolean)
+          : [];
+        const instructions = Array.isArray(item.instructions)
+          ? item.instructions.map((entry) => String(entry).trim()).filter(Boolean)
+          : [];
+
+        const servingsValue = typeof item.servings === 'number' && item.servings > 0 ? item.servings : null;
+
+        return {
+          title: String(item.title || 'Untitled Dish'),
+          cuisine_type: String(item.cuisine_type || ''),
+          cooking_time: String(item.cooking_time || ''),
+          ingredients,
+          instructions,
+          servings: servingsValue,
+          baseServings: servingsValue,
+          mealType,
+          calories: typeof item.calories_per_serving === 'number' ? item.calories_per_serving : null,
+          caloriesPerServing: typeof item.calories_per_serving === 'number' ? item.calories_per_serving : null,
+          totalCostUsd: typeof item.total_cost_usd === 'number' ? item.total_cost_usd : null,
+          costPerServingUsd: typeof item.cost_per_serving_usd === 'number' ? item.cost_per_serving_usd : null,
+        };
+      });
+
+      const filtered = normalized.filter((dish) =>
+        dish.ingredients.every((ing) => isIngredientAllowed(String(ing), dietary))
+      );
+
       const adjusted = applyMealTypeHeuristics(filtered, mealType);
       setGeneratedDishes(adjusted);
     } catch (err) {
@@ -435,21 +514,9 @@ export default function HomeScreen() {
             onLayout={(e) => setDishesOffsetY(e.nativeEvent.layout.y)}
           >
             <Text style={styles.dishesTitle}>Your Personalized Dishes</Text>
-            {generatedDishes.map((dish, index) => {
-              const sidesCatalog = [
-                'Mixed Greens Salad',
-                'Garlic Bread',
-                'Roasted Vegetables',
-                'Herbed Rice',
-                'Quinoa Pilaf',
-                'Sweet Potato Mash',
-                'Grilled Asparagus',
-                'Sauteed Green Beans',
-              ];
-              return (
-                <DishScorecard key={index} dish={dish} servings={servings} suggestedSides={sidesCatalog} />
-              );
-            })}
+            {generatedDishes.map((dish, index) => (
+              <DishScorecard key={index} dish={dish} servings={servings} suggestedSides={defaultSideSuggestions} />
+            ))}
           </View>
         )}
         {loading && (
