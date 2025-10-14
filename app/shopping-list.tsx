@@ -40,7 +40,20 @@ const INGREDIENT_KEYS = ['name', 'title', 'text', 'label', 'ingredient', 'value'
 
 function toIngredientString(raw: unknown): string {
   if (!raw) return '';
-  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        const parsedStr = toIngredientString(parsed);
+        if (parsedStr) return parsedStr;
+      } catch (_) {
+        // fall through to returning trimmed string
+      }
+    }
+    return trimmed;
+  }
   if (Array.isArray(raw)) {
     for (const entry of raw) {
       const str = toIngredientString(entry);

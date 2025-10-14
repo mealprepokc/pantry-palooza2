@@ -175,7 +175,6 @@ export default function HomeScreen() {
   const [servings, setServings] = useState<number>(2);
   // Removed Max Prep Time control from UI; backend still supports it but we no longer send it.
   const [strictMode, setStrictMode] = useState<boolean>(false);
-  const regenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dietary, setDietary] = useState<DietaryPrefs>({});
 
   useEffect(() => {
@@ -193,20 +192,6 @@ export default function HomeScreen() {
     if (any !== libraryAny) setLibraryAny(any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasonings.length, produce.length, proteins.length, pastas.length, equipment.length]);
-
-  // Auto-regenerate when servings changes and we already have a library
-  useEffect(() => {
-    if (!libraryAny) return;
-    if (loading) return;
-    if (regenTimer.current) clearTimeout(regenTimer.current);
-    regenTimer.current = setTimeout(() => {
-      generateDishes();
-    }, 250);
-    return () => {
-      if (regenTimer.current) clearTimeout(regenTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [servings]);
 
   // Load when auth state resolves (user becomes available)
   useEffect(() => {
@@ -476,17 +461,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.controlGroup}>
-          <Text style={styles.controlLabel}>Serving Size</Text>
-          <View style={styles.segmentRow}>
-            {[1,2,3,4].map((n) => (
-              <TouchableOpacity key={n} style={[styles.segment, servings===n && styles.segmentActive]} onPress={() => setServings(n)}>
-                <Text style={[styles.segmentText, servings===n && styles.segmentTextActive]}>{n}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
         {/* Max Prep Time control removed per request; times remain on cards */}
 
         {/* Dish Creation Mode moved to Account preferences */}
@@ -507,6 +481,23 @@ export default function HomeScreen() {
             <Text style={styles.generateButtonText}>Generate Dishes!</Text>
           )}
         </TouchableOpacity>
+
+        <View style={[styles.controlGroup, styles.servingsControl]}
+        >
+          <Text style={styles.controlLabel}>Serving Size</Text>
+          <View style={styles.segmentRow}>
+            {[1, 2, 3, 4].map((n) => (
+              <TouchableOpacity
+                key={n}
+                style={[styles.segment, servings === n && styles.segmentActive]}
+                onPress={() => setServings(n)}
+              >
+                <Text style={[styles.segmentText, servings === n && styles.segmentTextActive]}>{n}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.helper}>Adjust servings to scale the generated ingredients and instructions. Tap Generate again if you want a new set of dishes.</Text>
+        </View>
 
         {generatedDishes.length > 0 && (
           <View
@@ -575,6 +566,9 @@ const styles = StyleSheet.create({
   },
   controlGroup: {
     marginBottom: 16,
+  },
+  servingsControl: {
+    marginTop: 12,
   },
   controlLabel: {
     fontSize: 16,
