@@ -108,6 +108,13 @@ const applyMealTypeHeuristics = (dishes: GeneratedDish[], mealType: MealType): G
   return prioritized;
 };
 
+const cloneDishes = (dishes: GeneratedDish[]): GeneratedDish[] =>
+  dishes.map((dish) => ({
+    ...dish,
+    ingredients: Array.isArray(dish.ingredients) ? [...dish.ingredients] : [],
+    instructions: Array.isArray(dish.instructions) ? [...dish.instructions] : [],
+  }));
+
 export default function HomeScreen() {
   const { user } = useAuth();
   const defaultSideSuggestions: DishSideSuggestion[] = [
@@ -169,6 +176,8 @@ export default function HomeScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [dishesOffsetY, setDishesOffsetY] = useState<number | null>(null);
   const [shareMsg, setShareMsg] = useState('');
+  const cacheRef = useRef<Map<string, GeneratedDish[]>>(new Map());
+  const lastRequestKeyRef = useRef<string | null>(null);
   const qs = useLocalSearchParams();
   // Generate controls
   const [mealType, setMealType] = useState<MealType>('Dinner');
@@ -299,31 +308,47 @@ export default function HomeScreen() {
     }
     // Equipment optional but recommended; do not block if empty.
 
+    const requestBody = {
+      seasonings,
+      vegetables: produce,
+      entrees: proteins,
+      pastas,
+      equipment,
+      userId: user?.id ?? null,
+      filters: {
+        mealType,
+        servings,
+        mode: strictMode ? 'strict' : 'loose',
+        dietary,
+      },
+    };
+
+    const cacheKey = JSON.stringify(requestBody);
+    const previousKey = lastRequestKeyRef.current;
+    lastRequestKeyRef.current = cacheKey;
+
+    const cached = cacheRef.current.get(cacheKey);
+    const shouldForceRefresh = Boolean(cached && previousKey === cacheKey);
+
+    if (cached && !shouldForceRefresh) {
+      setError('');
+      setGeneratedDishes(cloneDishes(cached));
+      return;
+    }
+
     setLoading(true);
     setError('');
     setGeneratedDishes([]);
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-dishes', {
-        body: {
-          // Use user_library items
-          seasonings,
-          vegetables: produce,
-          entrees: proteins,
-          pastas,
-          equipment,
-          // New filters
-          filters: {
-            mealType,
-            servings,
-            // maxTimeMinutes removed from UI; not sent
-            mode: strictMode ? 'strict' : 'loose',
-            dietary,
-          },
-        },
+        body: { ...requestBody, forceRefresh: shouldForceRefresh },
       });
 
       if (error) {
+        if (error.message?.toLowerCase().includes('rate_limit')) {
+          throw new Error('Generation limit reached. Please try again in a bit.');
+        }
         throw error;
       }
 
@@ -370,9 +395,12 @@ export default function HomeScreen() {
       );
 
       const adjusted = applyMealTypeHeuristics(filtered, mealType);
-      setGeneratedDishes(adjusted);
+      const finalDishes = cloneDishes(adjusted);
+      cacheRef.current.set(cacheKey, finalDishes);
+      setGeneratedDishes(finalDishes);
     } catch (err) {
-      setError('Failed to generate dishes. Please try again.');
+      const message = err instanceof Error ? err.message : 'Failed to generate dishes. Please try again.';
+      setError(message || 'Failed to generate dishes. Please try again.');
       console.error(err);
     } finally {
       setLoading(false);

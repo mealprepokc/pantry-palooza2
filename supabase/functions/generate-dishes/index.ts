@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2.45.3";
 
 declare const Deno: {
   env: {
@@ -23,7 +24,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { seasonings = [], vegetables = [], entrees = [], pastas = [], equipment = [], filters = {} } = body || {};
+    const { seasonings = [], vegetables = [], entrees = [], pastas = [], equipment = [], filters = {}, userId, forceRefresh = false } = body || {};
     const { mealType = 'Dinner', servings = 2, maxTimeMinutes = null, mode = 'strict' } = filters as {
       mealType?: 'Breakfast' | 'Lunch' | 'Dinner';
       servings?: number;
@@ -46,60 +47,160 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+      console.error('Supabase service credentials missing');
+      return new Response(
+        JSON.stringify({ error: 'Service configuration missing' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { persistSession: false },
+    });
+
+    const normalizeArray = (values: unknown[]): string[] =>
+      (Array.isArray(values) ? values : [])
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter((entry) => entry.length > 0)
+        .sort((a, b) => a.localeCompare(b));
+
+    const normalizedSeasonings = normalizeArray(seasonings);
+    const normalizedVegetables = normalizeArray(vegetables);
+    const normalizedEntrees = normalizeArray(entrees);
+    const normalizedPastas = normalizeArray(pastas);
+    const normalizedEquipment = normalizeArray(equipment);
+
+    const requestFingerprint = {
+      seasonings: normalizedSeasonings,
+      vegetables: normalizedVegetables,
+      entrees: normalizedEntrees,
+      pastas: normalizedPastas,
+      equipment: normalizedEquipment,
+      mealType,
+      servings,
+      mode,
+      dietary: filters?.dietary ?? null,
+      maxTimeMinutes: maxTimeMinutes ?? null,
+    };
+
+    const requestHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(requestFingerprint)));
+    const requestHashHex = Array.from(new Uint8Array(requestHash))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
     const ingredientsList = [
-      ...seasonings,
-      ...vegetables,
-      ...entrees,
-      ...pastas,
+      ...normalizedSeasonings,
+      ...normalizedVegetables,
+      ...normalizedEntrees,
+      ...normalizedPastas,
     ].join(', ');
 
-    const equipmentList = equipment.join(', ');
+    const equipmentList = normalizedEquipment.join(', ');
 
     const strictnessNote = mode === 'strict'
-      ? `STRICT mode: Only use ingredients from the provided list (plus basic pantry staples like salt, pepper, oil, water). Do NOT introduce other ingredients.`
-      : `LOOSE mode: Prefer the provided ingredients, but you may introduce reasonable additions or substitutes if they significantly improve the dish. Keep added items minimal and practical.`;
+      ? 'STRICT mode: Only use listed ingredients plus basic pantry staples (salt, pepper, oil, water).'
+      : 'LOOSE mode: Prefer listed ingredients; minor sensible additions allowed.';
 
     const timeNote = maxTimeMinutes && Number(maxTimeMinutes) > 0
-      ? `Target total cooking time for each dish: at most ${maxTimeMinutes} minutes.`
-      : `No hard time limit; choose appropriate times.`;
+      ? `Max cooking time: ${maxTimeMinutes} minutes.`
+      : 'Choose practical cooking times.';
 
     const mealGuidance = mealType === 'Breakfast'
-      ? `Breakfast guidance: Favor quick, lighter preparations. Prefer eggs, dairy, breads, grains, fruits, and produce (e.g., omelets, breakfast bowls, toasts, yogurt parfaits, pancakes). Keep flavors bright and morning-appropriate.`
+      ? 'Keep flavors bright and morning friendly.'
       : mealType === 'Lunch'
-      ? `Lunch guidance: Aim for balanced, portable or quick dishes (salads, bowls, sandwiches, wraps, pastas). Use produce heavily; proteins can be lighter. Avoid heavy dinner-style stews unless clearly lunch-appropriate.`
-      : `Dinner guidance: Heartier mains welcome. Favor proteins with sides, pastas, grains. Depth of flavor (roasting, searing, sauces) is encouraged while respecting the time constraint.`;
+      ? 'Favor balanced, portable or quick dishes.'
+      : 'Heartier mains welcome with satisfying sides.';
 
-    const prompt = `You are a creative chef AI. Generate exactly 10 unique and delicious ${mealType.toLowerCase()} dish ideas based on the following. Prioritize using the provided ingredients list.
+    const prompt = `Generate exactly 5 unique ${mealType.toLowerCase()} dishes using primarily the provided ingredients.
 
-Available Ingredients: ${ingredientsList}
-Available Equipment: ${equipmentList || 'Any'}
-Servings: ${servings}
-${timeNote}
-${strictnessNote}
-${mealGuidance}
+ingredients: [${ingredientsList}]
+equipment: [${equipmentList || 'any'}]
+servings: ${servings}
+mode: ${strictnessNote}
+time: ${timeNote}
+guidance: ${mealGuidance}
 
-For each dish, provide:
-1. A creative and appetizing dish title
-2. The cuisine type (e.g., Italian, Asian, Mexican, American, Mediterranean)
-3. Approximate cooking time formatted strictly as "NN mins" (numeric minutes only, e.g., "20 mins", "45 mins")
-4. A complete list of ingredients with MEASUREMENTS and UNITS, scaled for ${servings} servings (e.g., "2 cups chopped spinach", "1 lb chicken breast", "1 tbsp olive oil") while respecting the strictness rule
-5. Detailed step-by-step preparation and cooking instructions, broken into an array of 4-6 clear steps
-6. A calories_per_serving number (estimated kcal per serving)
+Each dish must include:
+1. Title.
+2. Cuisine type.
+3. Cooking time formatted "NN mins".
+4. Ingredient list of concise strings with measurements.
+5. 3-4 instruction steps, each <= 20 words.
+6. calories_per_serving (integer).
 
-Return the response strictly as a JSON object of the form {
-  "dishes": [
-    {
-      "title": "Dish Name",
-      "cuisine_type": "Cuisine Type",
-      "cooking_time": "30 mins",
-      "ingredients": ["2 cups ...", "1 lb ...", ...],
-      "instructions": ["Step 1", "Step 2", ...],
-      "calories_per_serving": 520
+Respond with JSON only.`;
+
+    const applyRateLimit = async () => {
+      if (!userId) return { allowed: true, reason: null };
+      const windowMinutes = 60;
+      const maxRequests = 6;
+      const cutoff = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
+
+      const { data, error } = await supabaseAdmin
+        .from('user_generation_events')
+        .select('id, created_at')
+        .eq('user_id', userId)
+        .gte('created_at', cutoff);
+
+      if (error) {
+        console.warn('Rate limit lookup failed', error);
+        return { allowed: true, reason: null };
+      }
+
+      if ((data?.length || 0) >= maxRequests) {
+        return { allowed: false, reason: `Limit ${maxRequests} per ${windowMinutes} minutes reached.` };
+      }
+
+      const insertResult = await supabaseAdmin
+        .from('user_generation_events')
+        .insert({ user_id: userId, request_hash: requestHashHex });
+
+      if (insertResult.error) {
+        console.warn('Failed to record generation event', insertResult.error);
+      }
+
+      return { allowed: true, reason: null };
+    };
+
+    if (!forceRefresh) {
+      const { data: cached, error: cacheError } = await supabaseAdmin
+        .from('generated_dish_cache')
+        .select('payload, expires_at')
+        .eq('user_id', userId)
+        .eq('request_hash', requestHashHex)
+        .maybeSingle();
+
+      if (cacheError) {
+        console.warn('Failed to query cache', cacheError);
+      }
+
+      if (cached?.payload && cached.expires_at && new Date(cached.expires_at).getTime() > Date.now()) {
+        return new Response(
+          JSON.stringify({ dishes: cached.payload, source: 'cache' }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
     }
-  ]
-} where the dishes array contains exactly 10 entries.
 
-Make sure the dishes are creative, practical, and use the available equipment when relevant. Include cooking temperatures where relevant.`;
+    const rateLimit = await applyRateLimit();
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: 'rate_limit_exceeded', message: rateLimit.reason }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -119,8 +220,8 @@ Make sure the dishes are creative, practical, and use the available equipment wh
             content: prompt,
           },
         ],
-        temperature: 0.8,
-        max_tokens: 6000,
+        temperature: 0.6,
+        max_output_tokens: 2200,
         response_format: {
           type: 'json_schema',
           json_schema: {
@@ -132,8 +233,8 @@ Make sure the dishes are creative, practical, and use the available equipment wh
               properties: {
                 dishes: {
                   type: 'array',
-                  minItems: 10,
-                  maxItems: 10,
+                  minItems: 5,
+                  maxItems: 5,
                   items: {
                     type: 'object',
                     additionalProperties: false,
@@ -346,8 +447,34 @@ Make sure the dishes are creative, practical, and use the available equipment wh
       }
     });
 
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString();
+
+    if (userId) {
+      const cachePayload = dishesWithCost.map((dish) => ({ ...dish }));
+      const upsertResult = await supabaseAdmin
+        .from('generated_dish_cache')
+        .upsert(
+          {
+            user_id: userId,
+            cache_key: requestHashHex,
+            request_hash: requestHashHex,
+            meal_type: mealType,
+            servings,
+            payload: cachePayload,
+            expires_at: expiresAt,
+          },
+          {
+            onConflict: 'user_id,request_hash',
+          }
+        );
+
+      if (upsertResult.error) {
+        console.warn('Failed to upsert cache entry', upsertResult.error);
+      }
+    }
+
     return new Response(
-      JSON.stringify({ dishes: dishesWithCost }),
+      JSON.stringify({ dishes: dishesWithCost, source: 'live' }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
