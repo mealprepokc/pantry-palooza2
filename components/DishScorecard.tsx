@@ -267,9 +267,22 @@ export function DishScorecard({
     return source.map((item) => parseIngredientLine(item)).filter((parsed) => parsed.original.length > 0);
   }, [dish.ingredients]);
 
+  const baseDishServings = useMemo(() => {
+    const fromDish = typeof dish.servings === 'number' && Number.isFinite(dish.servings) ? dish.servings : null;
+    const fromEdge = typeof dish.baseServings === 'number' && Number.isFinite(dish.baseServings) ? dish.baseServings : null;
+    const positive = [fromDish, fromEdge].find((value) => value && value > 0);
+    return positive ?? 2;
+  }, [dish.servings, dish.baseServings]);
+
+  const servingScale = useMemo(() => {
+    if (!baseDishServings || baseDishServings <= 0) return 1;
+    return Math.max(0.25, servings / baseDishServings);
+  }, [servings, baseDishServings]);
+
   const ingredientLines = useMemo<string[]>(() => {
-    return parsedIngredients.map((item) => item.original);
-  }, [parsedIngredients]);
+    if (!parsedIngredients.length) return [];
+    return parsedIngredients.map((item) => formatScaledIngredient(item, servingScale));
+  }, [parsedIngredients, servingScale]);
 
   const normalizedIngredients = useMemo<string[]>(() => {
     const seen = new Set<string>();
@@ -288,16 +301,20 @@ export function DishScorecard({
     const raw = dish.instructions;
     if (!raw) return [];
     if (Array.isArray(raw)) {
-      return raw.map((line) => String(line).trim()).filter(Boolean);
+      return raw
+        .map((line) => String(line).trim())
+        .filter(Boolean)
+        .map((line) => scaleInstructionLine(line, servingScale));
     }
     if (typeof raw === 'string') {
       return raw
         .split(/\r?\n+/)
         .map((line) => line.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .map((line) => scaleInstructionLine(line, servingScale));
     }
     return [];
-  }, [dish.instructions]);
+  }, [dish.instructions, servingScale]);
 
   const instructionsText = useMemo(() => instructionsLines.join('\n'), [instructionsLines]);
 

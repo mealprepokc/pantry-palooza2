@@ -23,7 +23,19 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const body = await req.json();
+    let body: any = null;
+    try {
+      body = await req.json();
+    } catch (parseError) {
+      console.error('Invalid JSON body:', parseError);
+      return new Response(
+        JSON.stringify({ error: 'invalid_request', message: 'Request body must be valid JSON.' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
     const { seasonings = [], vegetables = [], entrees = [], pastas = [], equipment = [], filters = {}, userId, forceRefresh = false } = body || {};
     const { mealType = 'Dinner', servings = 2, maxTimeMinutes = null, mode = 'strict' } = filters as {
       mealType?: 'Breakfast' | 'Lunch' | 'Dinner';
@@ -221,7 +233,6 @@ Respond with JSON only.`;
           },
         ],
         temperature: 0.6,
-        max_output_tokens: 2200,
         response_format: {
           type: 'json_schema',
           json_schema: {
@@ -265,7 +276,7 @@ Respond with JSON only.`;
     if (!response.ok) {
       const errorText = await response.text();
       console.error('OpenAI API error:', errorText);
-      throw new Error('OpenAI API request failed');
+      throw new Error(`OpenAI API request failed: ${errorText}`);
     }
 
     const data = await response.json();
