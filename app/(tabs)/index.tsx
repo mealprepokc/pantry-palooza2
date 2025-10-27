@@ -7,8 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   SafeAreaView,
+  Platform,
 } from 'react-native';
-import { Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '@/lib/supabase';
@@ -17,6 +17,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { GeneratedDish, GenerateDishesFunctionResponse } from '@/types/database';
 import { DishScorecard } from '@/components/DishScorecard';
 import type { DishSideSuggestion } from '@/types/generated';
+import { useAnalytics } from '@/contexts/AnalyticsContext';
 
 type MealType = 'Breakfast' | 'Lunch' | 'Dinner';
 
@@ -115,8 +116,33 @@ const cloneDishes = (dishes: GeneratedDish[]): GeneratedDish[] =>
     instructions: Array.isArray(dish.instructions) ? [...dish.instructions] : [],
   }));
 
+const normalizeList = (...lists: (string[] | null | undefined)[]): string[] => {
+  const result: string[] = [];
+  const seen = new Set<string>();
+
+  lists.forEach((list) => {
+    (list ?? []).forEach((value) => {
+      const trimmed = String(value ?? '').trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      result.push(trimmed);
+    });
+  });
+
+  return result;
+};
+
+const normalizeTitleKey = (value: string | null | undefined): string =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
 export default function HomeScreen() {
   const { user } = useAuth();
+  const { track } = useAnalytics();
   const defaultSideSuggestions: DishSideSuggestion[] = [
     {
       name: 'Mixed Greens Salad',
@@ -175,10 +201,11 @@ export default function HomeScreen() {
   const [error, setError] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const [dishesOffsetY, setDishesOffsetY] = useState<number | null>(null);
-  const [shareMsg, setShareMsg] = useState('');
   const cacheRef = useRef<Map<string, GeneratedDish[]>>(new Map());
   const lastRequestKeyRef = useRef<string | null>(null);
+  const recentTitlesRef = useRef<Map<string, Set<string>>>(new Map());
   const qs = useLocalSearchParams();
+  const seededFromQueryRef = useRef(false);
   // Generate controls
   const [mealType, setMealType] = useState<MealType>('Dinner');
   const [servings, setServings] = useState<number>(2);
@@ -186,9 +213,64 @@ export default function HomeScreen() {
   const [strictMode, setStrictMode] = useState<boolean>(false);
   const [dietary, setDietary] = useState<DietaryPrefs>({});
 
+  const loadUserLibrary = useCallback(async () => {
+    if (!user) return;
+    // Prefer user_library, fallback to legacy user_selections
+    const { data: lib } = await supabase
+      .from('user_library')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (lib) {
+      const normalizedSeasonings = normalizeList(lib.seasonings);
+      const normalizedProduce = normalizeList(lib.produce, lib.vegetables);
+      const normalizedProteins = normalizeList(lib.proteins, lib.entrees);
+      const normalizedPastas = normalizeList(lib.pastas, lib.grains, lib.breads);
+      const normalizedEquipment = normalizeList(lib.equipment, lib.appliances, lib.tools);
+      setSeasonings(normalizedSeasonings);
+      setProduce(normalizedProduce);
+      setProteins(normalizedProteins);
+      setPastas(normalizedPastas);
+      setEquipment(normalizedEquipment);
+      const any =
+        normalizedSeasonings.length +
+        normalizedProduce.length +
+        normalizedProteins.length +
+        normalizedPastas.length +
+        normalizeList(lib.sauces_condiments, lib.dairy, lib.non_perishables).length > 0;
+      setLibraryAny(any);
+      return;
+    }
+    const { data } = await supabase
+      .from('user_selections')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (data) {
+      const normalizedSeasonings = normalizeList(data.seasonings);
+      const normalizedProduce = normalizeList(data.vegetables);
+      const normalizedProteins = normalizeList(data.entrees);
+      const normalizedPastas = normalizeList(data.pastas);
+      const normalizedEquipment = normalizeList(data.equipment);
+      setSeasonings(normalizedSeasonings);
+      setProduce(normalizedProduce);
+      setProteins(normalizedProteins);
+      setPastas(normalizedPastas);
+      setEquipment(normalizedEquipment);
+      const any =
+        normalizedSeasonings.length +
+        normalizedProduce.length +
+        normalizedProteins.length +
+        normalizedPastas.length +
+        normalizedEquipment.length > 0;
+      setLibraryAny(any);
+    }
+  }, [user]);
+
   useEffect(() => {
     loadUserLibrary();
-  }, []);
+  }, [loadUserLibrary]);
 
   // Fallback: derive libraryAny from current arrays to handle any timing edges
   useEffect(() => {
@@ -199,8 +281,7 @@ export default function HomeScreen() {
       pastas.length > 0 ||
       equipment.length > 0;
     if (any !== libraryAny) setLibraryAny(any);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seasonings.length, produce.length, proteins.length, pastas.length, equipment.length]);
+  }, [seasonings.length, produce.length, proteins.length, pastas.length, equipment.length, libraryAny]);
 
   // Load when auth state resolves (user becomes available)
   useEffect(() => {
@@ -210,92 +291,43 @@ export default function HomeScreen() {
       (async () => {
         const { data } = await supabase
           .from('account_prefs')
-          .select('strict_mode, dietary')
+          .select('dietary, strict_mode')
           .eq('user_id', user.id)
           .maybeSingle();
         if (data && typeof data.strict_mode === 'boolean') setStrictMode(!!data.strict_mode);
         if (data && data.dietary) setDietary(data.dietary as DietaryPrefs);
       })();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, loadUserLibrary]);
 
   // Ensure library is refreshed when returning to this tab
   useFocusEffect(
     useCallback(() => {
       loadUserLibrary();
-    }, [user?.id])
+    }, [loadUserLibrary])
   );
 
   // Prefill from querystring (optional, web share links) - maps to library-backed state when present
   useEffect(() => {
+    if (seededFromQueryRef.current) return;
+    seededFromQueryRef.current = true;
     const parseParam = (key: string) => {
       const v = qs[key];
       if (!v) return [] as string[];
       const raw = Array.isArray(v) ? v[0] : v;
       return raw.split(',').map((s) => decodeURIComponent(s.trim())).filter(Boolean);
     };
-    const s = parseParam('seasonings');
-    const v = parseParam('vegetables');
-    const e = parseParam('entrees');
-    const p = parseParam('pastas');
-    const eq = parseParam('equipment');
+    const s = normalizeList(parseParam('seasonings'));
+    const v = normalizeList(parseParam('vegetables'));
+    const e = normalizeList(parseParam('entrees'));
+    const p = normalizeList(parseParam('pastas'));
+    const eq = normalizeList(parseParam('equipment'));
     if (s.length) setSeasonings(s);
     if (v.length) setProduce(v);
     if (e.length) setProteins(e);
     if (p.length) setPastas(p);
     if (eq.length) setEquipment(eq);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const loadUserLibrary = async () => {
-    if (!user) return;
-    // Prefer user_library, fallback to legacy user_selections
-    const { data: lib } = await supabase
-      .from('user_library')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (lib) {
-      setSeasonings(lib.seasonings || []);
-      setProduce(lib.produce || lib.vegetables || []);
-      setProteins(lib.proteins || lib.entrees || []);
-      setPastas(lib.pastas || []);
-      setEquipment(lib.equipment || []);
-      const any =
-        (lib.seasonings?.length || 0) +
-        (lib.produce?.length || lib.vegetables?.length || 0) +
-        (lib.proteins?.length || lib.entrees?.length || 0) +
-        (lib.pastas?.length || 0) +
-        (lib.grains?.length || 0) +
-        (lib.breads?.length || 0) +
-        (lib.sauces_condiments?.length || 0) +
-        (lib.dairy?.length || 0) +
-        (lib.non_perishables?.length || 0) > 0;
-      setLibraryAny(any);
-      return;
-    }
-    const { data } = await supabase
-      .from('user_selections')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    if (data) {
-      setSeasonings(data.seasonings || []);
-      setProduce(data.vegetables || []);
-      setProteins(data.entrees || []);
-      setPastas(data.pastas || []);
-      setEquipment(data.equipment || []);
-      const any =
-        (data.seasonings?.length || 0) +
-        (data.vegetables?.length || 0) +
-        (data.entrees?.length || 0) +
-        (data.pastas?.length || 0) +
-        (data.equipment?.length || 0) > 0;
-      setLibraryAny(any);
-    }
-  };
+  }, [qs]);
 
   // No autosave here; Library screen manages persistence.
 
@@ -304,11 +336,17 @@ export default function HomeScreen() {
   const generateDishes = async () => {
     if (!libraryAny) {
       setError('Your Library is empty. Add items in Library first.');
+      void track('generate_failure', {
+        reason: 'library_empty',
+        mealType,
+        servings,
+        strict: strictMode,
+      });
       return;
     }
     // Equipment optional but recommended; do not block if empty.
 
-    const requestBody = {
+    const baseRequest = {
       seasonings,
       vegetables: produce,
       entrees: proteins,
@@ -323,16 +361,35 @@ export default function HomeScreen() {
       },
     };
 
-    const cacheKey = JSON.stringify(requestBody);
+    const cacheKey = JSON.stringify(baseRequest);
     const previousKey = lastRequestKeyRef.current;
     lastRequestKeyRef.current = cacheKey;
 
     const cached = cacheRef.current.get(cacheKey);
-    const shouldForceRefresh = Boolean(cached && previousKey === cacheKey);
+    const recentTitlesSet = recentTitlesRef.current.get(cacheKey);
+    let shouldForceRefresh = Boolean(cached && previousKey === cacheKey);
+    if (!shouldForceRefresh && !cached && !recentTitlesSet) {
+      // initialize tracking for new key
+      recentTitlesRef.current.set(cacheKey, new Set());
+    }
+
+    const previousTitles = Array.from(recentTitlesRef.current.get(cacheKey) ?? new Set<string>());
+
+    const requestBody = {
+      ...baseRequest,
+      recentTitles: previousTitles,
+    };
 
     if (cached && !shouldForceRefresh) {
       setError('');
       setGeneratedDishes(cloneDishes(cached));
+      void track('generate_result', {
+        source: 'cache',
+        dishCount: cached.length,
+        mealType,
+        servings,
+        strict: strictMode,
+      });
       return;
     }
 
@@ -341,6 +398,18 @@ export default function HomeScreen() {
     setGeneratedDishes([]);
 
     try {
+      void track('generate_request', {
+        hasCache: Boolean(cached),
+        forceRefresh: shouldForceRefresh,
+        seasonings: seasonings.length,
+        produce: produce.length,
+        proteins: proteins.length,
+        pastas: pastas.length,
+        equipment: equipment.length,
+        mealType,
+        servings,
+        strict: strictMode,
+      });
       const { data, error } = await supabase.functions.invoke('generate-dishes', {
         body: { ...requestBody, forceRefresh: shouldForceRefresh },
       });
@@ -396,50 +465,55 @@ export default function HomeScreen() {
 
       const adjusted = applyMealTypeHeuristics(filtered, mealType);
       const finalDishes = cloneDishes(adjusted);
-      cacheRef.current.set(cacheKey, finalDishes);
-      setGeneratedDishes(finalDishes);
+      const titleSet = recentTitlesRef.current.get(cacheKey) ?? new Set<string>();
+      const seenKeys = new Set(Array.from(titleSet));
+      const filteredFresh = finalDishes.filter((dish) => {
+        const key = normalizeTitleKey(dish.title);
+        if (!key) return true;
+        if (seenKeys.has(key)) return false;
+        seenKeys.add(key);
+        return true;
+      });
+
+      // If filtering removed too many dishes (e.g., duplicates), fall back to original list.
+      const usableDishes = filteredFresh.length >= Math.min(3, finalDishes.length) ? filteredFresh : finalDishes;
+
+      const titlesForTracking = recentTitlesRef.current.get(cacheKey) ?? new Set<string>();
+      usableDishes.forEach((dish) => {
+        const key = normalizeTitleKey(dish.title);
+        if (key) titlesForTracking.add(key);
+      });
+      recentTitlesRef.current.set(cacheKey, titlesForTracking);
+
+      cacheRef.current.set(cacheKey, usableDishes);
+      setGeneratedDishes(usableDishes);
+      void track('generate_result', {
+        source: 'network',
+        dishCount: usableDishes.length,
+        filteredOut: finalDishes.length - usableDishes.length,
+        mealType,
+        servings,
+        strict: strictMode,
+        forceRefresh: shouldForceRefresh,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to generate dishes. Please try again.';
       setError(message || 'Failed to generate dishes. Please try again.');
       console.error(err);
+      void track('generate_failure', {
+        reason: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        mealType,
+        servings,
+        strict: strictMode,
+        forceRefresh: shouldForceRefresh,
+      });
     } finally {
       setLoading(false);
     }
   };
 
   const hasLibrary = libraryAny;
-
-  const buildShareUrl = () => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return '';
-    const params = new URLSearchParams();
-    if (seasonings.length) params.set('seasonings', seasonings.map(encodeURIComponent).join(','));
-    // Keep legacy keys for compatibility, use current state variables
-    if (produce.length) params.set('vegetables', produce.map(encodeURIComponent).join(','));
-    if (proteins.length) params.set('entrees', proteins.map(encodeURIComponent).join(','));
-    if (pastas.length) params.set('pastas', pastas.map(encodeURIComponent).join(','));
-    if (equipment.length) params.set('equipment', equipment.map(encodeURIComponent).join(','));
-    const qs = params.toString();
-    return `${window.location.origin}${window.location.pathname}${qs ? `?${qs}` : ''}`;
-  };
-
-  const onShare = async () => {
-    if (Platform.OS !== 'web') return;
-    try {
-      const url = buildShareUrl();
-      await navigator.clipboard.writeText(url);
-      setShareMsg('Share link copied to clipboard');
-      setTimeout(() => setShareMsg(''), 2000);
-    } catch (e) {
-      setShareMsg('Unable to copy link');
-      setTimeout(() => setShareMsg(''), 2000);
-    }
-  };
-
-  const onPrint = () => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.print) {
-      window.print();
-    }
-  };
 
   // After results render and layout reports the Y offset, perform the scroll.
   useEffect(() => {
@@ -449,12 +523,13 @@ export default function HomeScreen() {
         if (scrollRef.current) {
           try {
             scrollRef.current.scrollTo({ y: Math.max(0, dishesOffsetY - 12), animated: true });
-          } catch (_) {
+          } catch {
             // Fallback
             scrollRef.current.scrollToEnd({ animated: true });
           }
         }
       });
+
       return () => cancelAnimationFrame(id);
     }
   }, [generatedDishes.length, dishesOffsetY]);
@@ -494,9 +569,6 @@ export default function HomeScreen() {
         {/* Dish Creation Mode moved to Account preferences */}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {shareMsg ? <Text style={styles.helper}>{shareMsg}</Text> : null}
-
-        {/* Share/Print temporarily hidden for Phase 1 polish */}
 
         <TouchableOpacity
           style={[styles.generateButton, !hasLibrary && styles.generateButtonDisabled]}
@@ -538,6 +610,12 @@ export default function HomeScreen() {
             ))}
           </View>
         )}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Need details on how we handle your data?</Text>
+          <TouchableOpacity onPress={() => router.push('/policy')} accessibilityRole="link">
+            <Text style={styles.footerLink}>View our Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
         {loading && (
           <View style={styles.loadingOverlay}>
             <View style={styles.loadingCard}>
@@ -717,5 +795,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     fontWeight: '700',
+  },
+  footer: {
+    marginTop: 40,
+    paddingVertical: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+    alignItems: 'center',
+    gap: 8,
+  },
+  footerText: {
+    fontSize: 14,
+    color: '#5A6C7D',
+    textAlign: 'center',
+  },
+  footerLink: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FF6B35',
+    textAlign: 'center',
+    textDecorationLine: 'underline',
   },
 });
