@@ -35,6 +35,15 @@ const GROUP_LABELS: Record<MealGroupKey, string> = {
   Other: 'Other Favorites',
 };
 
+const mapToMealGroup = (value: unknown): MealGroupKey => {
+  if (typeof value !== 'string') return 'Other';
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'breakfast') return 'Breakfast';
+  if (normalized === 'lunch') return 'Lunch';
+  if (normalized === 'dinner') return 'Dinner';
+  return 'Other';
+};
+
 const parseIngredientList = (value: any): string[] => {
   if (!value) return [];
   if (Array.isArray(value)) return value.map((item) => String(item ?? '').trim()).filter(Boolean);
@@ -45,7 +54,7 @@ const parseIngredientList = (value: any): string[] => {
       try {
         const parsed = JSON.parse(trimmed);
         if (Array.isArray(parsed)) return parsed.map((item) => String(item ?? '').trim()).filter(Boolean);
-      } catch (_) {
+      } catch {
         // ignore parse failure
       }
     }
@@ -62,6 +71,7 @@ const numeric = (value: number | null | undefined): number | null =>
 
 export default function SavedScreen() {
   const { user } = useAuth();
+  const userId = user?.id;
   const { pendingCooked, markCookedSeen } = useAlerts();
   const [savedDishes, setSavedDishes] = useState<RichSavedDish[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,20 +84,20 @@ export default function SavedScreen() {
   const [expandedDishes, setExpandedDishes] = useState<Record<string, boolean>>({});
   const [markingCooked, setMarkingCooked] = useState<Record<string, boolean>>({});
 
-  const loadSavedDishes = async () => {
-    if (!user) return;
+  const loadSavedDishes = useCallback(async () => {
+    if (!userId) return;
     setLoading(true);
     const { data } = await supabase
       .from('saved_dishes')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (data) {
       setSavedDishes(data as RichSavedDish[]);
     }
     setLoading(false);
-  };
+  }, [userId]);
 
   const removeSaved = async (id: string) => {
     try {
@@ -153,7 +163,7 @@ export default function SavedScreen() {
   useFocusEffect(
     useCallback(() => {
       loadSavedDishes();
-    }, [user?.id])
+    }, [loadSavedDishes])
   );
 
   useEffect(() => {
@@ -171,7 +181,7 @@ export default function SavedScreen() {
     };
 
     savedDishes.forEach((dish) => {
-      const key = (dish.meal_type as MealGroupKey) || 'Other';
+      const key = mapToMealGroup(dish.meal_type);
       const group = groups[key] || groups.Other;
       group.push(dish);
     });

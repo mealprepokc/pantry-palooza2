@@ -32,6 +32,7 @@ export interface SavedDish {
   restaurant_cost_est?: number | null;
   savings_est?: number | null;
   suggested_sides?: string[] | null;
+  meal_type?: 'Breakfast' | 'Lunch' | 'Dinner' | null;
 }
 
 export interface GeneratedDish {

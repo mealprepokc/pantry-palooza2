@@ -43,7 +43,6 @@ export default function CookedScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  const now = useMemo(() => new Date(), []);
   const weekAgo = useMemo(() => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), []);
   const monthAgo = useMemo(() => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), []);
 

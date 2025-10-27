@@ -36,7 +36,17 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
-    const { seasonings = [], vegetables = [], entrees = [], pastas = [], equipment = [], filters = {}, userId, forceRefresh = false } = body || {};
+    const {
+      seasonings = [],
+      vegetables = [],
+      entrees = [],
+      pastas = [],
+      equipment = [],
+      filters = {},
+      userId,
+      forceRefresh = false,
+      recentTitles = [],
+    } = body || {};
     const { mealType = 'Dinner', servings = 2, maxTimeMinutes = null, mode = 'strict' } = filters as {
       mealType?: 'Breakfast' | 'Lunch' | 'Dinner';
       servings?: number;
@@ -44,7 +54,7 @@ Deno.serve(async (req: Request) => {
       mode?: 'strict' | 'loose';
     };
 
-    console.log('Received request:', { seasonings, vegetables, entrees, pastas, equipment, filters: { mealType, servings, maxTimeMinutes, mode } });
+    console.log('Received request:', { seasonings, vegetables, entrees, pastas, equipment, recentTitles, filters: { mealType, servings, maxTimeMinutes, mode } });
 
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
 
@@ -83,11 +93,18 @@ Deno.serve(async (req: Request) => {
         .filter((entry) => entry.length > 0)
         .sort((a, b) => a.localeCompare(b));
 
+    const normalizeTitleKey = (value: unknown): string =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
     const normalizedSeasonings = normalizeArray(seasonings);
     const normalizedVegetables = normalizeArray(vegetables);
     const normalizedEntrees = normalizeArray(entrees);
     const normalizedPastas = normalizeArray(pastas);
     const normalizedEquipment = normalizeArray(equipment);
+    const normalizedRecentTitles = normalizeArray(recentTitles);
 
     const requestFingerprint = {
       seasonings: normalizedSeasonings,
@@ -130,6 +147,10 @@ Deno.serve(async (req: Request) => {
       ? 'Favor balanced, portable or quick dishes.'
       : 'Heartier mains welcome with satisfying sides.';
 
+    const recentTitlesNote = normalizedRecentTitles.length
+      ? `Avoid repeating dishes with titles matching: [${normalizedRecentTitles.join(', ')}].`
+      : 'No prior dishes to avoid.';
+
     const prompt = `Generate exactly 5 unique ${mealType.toLowerCase()} dishes using primarily the provided ingredients.
 
 ingredients: [${ingredientsList}]
@@ -138,13 +159,14 @@ servings: ${servings}
 mode: ${strictnessNote}
 time: ${timeNote}
 guidance: ${mealGuidance}
+${recentTitlesNote}
 
 Each dish must include:
 1. Title.
 2. Cuisine type.
 3. Cooking time formatted "NN mins".
 4. Ingredient list of concise strings with measurements.
-5. 3-4 instruction steps, each <= 20 words.
+5. Instructions array with 4-6 steps. Each step must begin with "Step X:" and explicitly reference key ingredients, cookware, and timing cues (e.g., sear chicken 3 min per side).
 6. calories_per_serving (integer).
 
 Respond with JSON only.`;
@@ -323,6 +345,8 @@ Respond with JSON only.`;
       return Math.max(0, Math.round(num));
     };
 
+    const recentTitleSet = new Set(normalizedRecentTitles.map((title) => normalizeTitleKey(title)));
+
     const normalizedDishes = (Array.isArray(dishes) ? dishes : [])
       .slice(0, 10)
       .map((dish: Record<string, unknown>) => {
@@ -458,10 +482,27 @@ Respond with JSON only.`;
       }
     });
 
+    const dedupedByTitle: typeof dishesWithCost = [];
+    const seenTitles = new Set<string>();
+    dishesWithCost.forEach((dish) => {
+      const key = normalizeTitleKey(dish.title);
+      if (key && seenTitles.has(key)) return;
+      seenTitles.add(key);
+      dedupedByTitle.push(dish);
+    });
+
+    const filteredByRecency = dedupedByTitle.filter((dish) => {
+      const key = normalizeTitleKey(dish.title);
+      if (!key) return true;
+      return !recentTitleSet.has(key);
+    });
+
+    const usableDishes = filteredByRecency.length >= 3 ? filteredByRecency.slice(0, 5) : dedupedByTitle.slice(0, 5);
+
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString();
 
     if (userId) {
-      const cachePayload = dishesWithCost.map((dish) => ({ ...dish }));
+      const cachePayload = usableDishes.map((dish) => ({ ...dish }));
       const upsertResult = await supabaseAdmin
         .from('generated_dish_cache')
         .upsert(
@@ -485,7 +526,7 @@ Respond with JSON only.`;
     }
 
     return new Response(
-      JSON.stringify({ dishes: dishesWithCost, source: 'live' }),
+      JSON.stringify({ dishes: usableDishes, source: 'live' }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }

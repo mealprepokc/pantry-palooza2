@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -157,63 +157,6 @@ const buildLibraryPayload = (row: LibraryRow | null | undefined): NormalizedLibr
   };
 };
 
-const ensureLibraryCoverage = async (userId: string, prefs: DietaryPrefs) => {
-  const active = DIETARY_KEYS.filter((key) => prefs[key]);
-  if (active.length === 0) return;
-
-  try {
-    const { data } = await supabase
-      .from('user_library')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    const payload = buildLibraryPayload(data as LibraryRow | null | undefined);
-
-    active.forEach((key) => {
-      const recommendations = DIETARY_LIBRARY_RECOMMENDATIONS[key];
-      if (!recommendations) return;
-      Object.entries(recommendations).forEach(([section, items]) => {
-        if (!items || items.length === 0) return;
-        const column = SECTION_COLUMN_MAP[section];
-        if (!column) return;
-        const current = payload[column];
-        payload[column] = uniqueSorted([...current, ...items.map(formatItem)]);
-      });
-    });
-
-    const nowIso = new Date().toISOString();
-    const upsertPayload = {
-      user_id: userId,
-      seasonings: payload.seasonings,
-      produce: payload.produce,
-      proteins: payload.proteins,
-      pastas: payload.pastas,
-      equipment: payload.equipment,
-      grains: payload.grains,
-      breads: payload.breads,
-      sauces_condiments: payload.sauces_condiments,
-      dairy: payload.dairy,
-      non_perishables: payload.non_perishables,
-      updated_at: nowIso,
-    } as const;
-
-    await supabase.from('user_library').upsert(upsertPayload, { onConflict: 'user_id' });
-
-    await supabase.from('user_selections').upsert({
-      user_id: userId,
-      seasonings: upsertPayload.seasonings,
-      vegetables: upsertPayload.produce,
-      entrees: upsertPayload.proteins,
-      pastas: upsertPayload.pastas,
-      equipment: upsertPayload.equipment,
-      updated_at: nowIso,
-    }, { onConflict: 'user_id' });
-  } catch (error) {
-    console.warn('Failed to ensure dietary library coverage', error);
-  }
-};
-
 export default function AccountScreen() {
   const { user, signOut } = useAuth();
   const userId = user?.id ?? null;
@@ -330,7 +273,7 @@ export default function AccountScreen() {
                 }}
               />
             </View>
-            <Text style={styles.helper}>Leave "None" selected to keep your full Library available.</Text>
+            <Text style={styles.helper}>Leave “None” selected to keep your full Library available.</Text>
             {DIETARY_OPTIONS.map(({ key, label, helper }) => (
               <View key={key} style={styles.prefRow}>
                 <View style={styles.prefTextGroup}>

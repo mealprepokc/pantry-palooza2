@@ -16,6 +16,7 @@ import { supabase } from '@/lib/supabase';
 import { GeneratedDish } from '@/types/database';
 import type { DishSideSuggestion } from '@/types/generated';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAnalytics } from '@/contexts/AnalyticsContext';
 
 type MealType = 'Breakfast' | 'Lunch' | 'Dinner';
 
@@ -206,6 +207,7 @@ export function DishScorecard({
   suggestedSides = [],
 }: DishScorecardProps) {
   const { user } = useAuth();
+  const { track } = useAnalytics();
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [cooking, setCooking] = useState(false);
@@ -432,6 +434,10 @@ export function DishScorecard({
       if (error) {
         if (error.code === '23505') {
           setCookedState(true);
+          void track('cooked_marked', {
+            title: dish.title,
+            duplicate: true,
+          });
           if (Platform.OS === 'android') ToastAndroid.show('Already marked as cooked', ToastAndroid.SHORT);
           else Alert.alert('Already cooked', 'This dish is already in your cooked list.');
         } else {
@@ -439,6 +445,11 @@ export function DishScorecard({
         }
       } else {
         setCookedState(true);
+        void track('cooked_marked', {
+          title: dish.title,
+          mealType,
+          cookingTime: dish.cooking_time,
+        });
         if (Platform.OS === 'android') ToastAndroid.show('Marked as cooked', ToastAndroid.SHORT);
         else Alert.alert('Cooked', 'Dish marked as cooked.');
       }
@@ -458,6 +469,7 @@ export function DishScorecard({
     setSaving(true);
 
     try {
+      const resolvedMealType: MealType | null = (mealType ?? (dish.mealType as MealType) ?? null) as MealType | null;
       if (saved) {
         const { error } = await supabase
           .from('saved_dishes')
@@ -466,6 +478,10 @@ export function DishScorecard({
           .eq('title', dish.title);
         if (error) throw error;
         setSaved(false);
+        void track('unsave_dish', {
+          title: dish.title,
+          mealType: resolvedMealType,
+        });
         if (Platform.OS === 'android') ToastAndroid.show('Removed from Saved', ToastAndroid.SHORT);
         else Alert.alert('Removed', 'This dish was removed from your Saved list.');
       } else {
@@ -480,17 +496,27 @@ export function DishScorecard({
           restaurant_cost_est: restaurantCostEstimate != null ? Number(restaurantCostEstimate.toFixed(2)) : null,
           savings_est: savingsEstimate != null ? Number(savingsEstimate.toFixed(2)) : null,
           suggested_sides: suggestedSides,
-          meal_type: mealType,
+          meal_type: resolvedMealType,
         };
 
         const { error } = await supabase.from('saved_dishes').insert(payload);
         if (error) throw error;
 
         setSaved(true);
+        void track('save_dish', {
+          title: dish.title,
+          mealType: resolvedMealType,
+          servings,
+        });
         if (Platform.OS === 'android') ToastAndroid.show('Saved', ToastAndroid.SHORT);
         else Alert.alert('Saved', 'This dish was added to your Saved list.');
       }
     } catch (error: any) {
+      void track('generate_failure', {
+        reason: 'save_error',
+        title: dish.title,
+        message: error?.message,
+      });
       Alert.alert('Save failed', error?.message || 'Unexpected error while saving.');
     } finally {
       setSaving(false);
@@ -595,8 +621,8 @@ export function DishScorecard({
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Ingredients</Text>
             <Text style={styles.sectionSubtitle}>
-              Provided for {dish.servings ?? servings}{' '}
-              {(dish.servings ?? servings) === 1 ? 'serving' : 'servings'}
+              Serves {dish.servings ?? servings}{' '}
+              {(dish.servings ?? servings) === 1 ? 'person' : 'people'}
             </Text>
           </View>
           <View style={styles.ingredientsList}>

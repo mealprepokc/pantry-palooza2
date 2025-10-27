@@ -15,8 +15,9 @@ import {
   NativeScrollEvent,
   ToastAndroid,
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, type Href } from 'expo-router';
+import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import {

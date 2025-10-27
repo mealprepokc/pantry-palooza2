@@ -14,7 +14,7 @@ export default function FAQScreen() {
 
         <View style={styles.qa}>
           <Text style={styles.q}>How do I sign in?</Text>
-          <Text style={styles.a}>Use the magic link in the Auth screen. After clicking the link in your email, you'll be signed in automatically.</Text>
+          <Text style={styles.a}>Use the magic link in the Auth screen. After clicking the link in your email, you’ll be signed in automatically.</Text>
         </View>
 
         <View style={styles.qa}>
@@ -39,7 +39,7 @@ export default function FAQScreen() {
 
         <View style={styles.qa}>
           <Text style={styles.q}>Where is the Shopping List?</Text>
-          <Text style={styles.a}>In Account, tap Shopping List. It shows items required by Saved dishes that aren't in your Library.</Text>
+          <Text style={styles.a}>In Account, tap Shopping List. It shows items required by Saved dishes that aren’t in your Library.</Text>
         </View>
 
       </ScrollView>

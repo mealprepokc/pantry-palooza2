@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "bolt-expo-nativewind",
-    "slug": "bolt-expo-nativewind",
+    "name": "Pantry Palooza",
+    "slug": "what-is-in-your-kitchen",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -9,7 +9,9 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pantry.palooza",
+      "buildNumber": "1"
     },
     "web": {
       "bundler": "metro",
@@ -26,15 +28,22 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "dd03006e-c9f3-4c71-b808-9891ae721c35"
+        "projectId": "d86b373a-acfe-41e8-a1e9-4c6f29b23de8"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/dd03006e-c9f3-4c71-b808-9891ae721c35"
+      "url": "https://u.expo.dev/d86b373a-acfe-41e8-a1e9-4c6f29b23de8"
     },
-    "android": {}
+    "android": {
+      "package": "com.pantry.palooza",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    }
   }
 }

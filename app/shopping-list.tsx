@@ -166,7 +166,7 @@ export default function ShoppingListScreen() {
   const [missing, setMissing] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     (async () => {
       setLoading(true);
       const [{ data: saved }, { data: lib }] = await Promise.all([
@@ -238,7 +238,7 @@ export default function ShoppingListScreen() {
         <Text style={styles.headerSubtitle}>Items required by your Saved dishes but not in your Library.</Text>
         {groups.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>You're all set!</Text>
+            <Text style={styles.emptyTitle}>You’re all set!</Text>
             <Text style={styles.emptyText}>All ingredients for your Saved dishes are in your Library.</Text>
           </View>
         ) : (
