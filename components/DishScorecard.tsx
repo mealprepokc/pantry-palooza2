@@ -14,7 +14,6 @@ import { BookmarkPlus, BookmarkCheck, Clock, ChefHat } from 'lucide-react-native
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { GeneratedDish } from '@/types/database';
-import type { DishSideSuggestion } from '@/types/generated';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAnalytics } from '@/contexts/AnalyticsContext';
 
@@ -197,15 +196,9 @@ interface DishScorecardProps {
   dish: GeneratedDish;
   servings?: number;
   mealType?: MealType;
-  suggestedSides?: DishSideSuggestion[];
 }
 
-export function DishScorecard({
-  dish,
-  servings = 2,
-  mealType,
-  suggestedSides = [],
-}: DishScorecardProps) {
+export function DishScorecard({ dish, servings = 2, mealType }: DishScorecardProps) {
   const { user } = useAuth();
   const { track } = useAnalytics();
   const [saved, setSaved] = useState(false);
@@ -495,7 +488,6 @@ export function DishScorecard({
           cost_est: Number(costEstimate.toFixed(2)),
           restaurant_cost_est: restaurantCostEstimate != null ? Number(restaurantCostEstimate.toFixed(2)) : null,
           savings_est: savingsEstimate != null ? Number(savingsEstimate.toFixed(2)) : null,
-          suggested_sides: suggestedSides,
           meal_type: resolvedMealType,
         };
 
@@ -650,18 +642,6 @@ export function DishScorecard({
           </View>
         )}
 
-        {!!suggestedSides.length && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Suggested Sides</Text>
-            <View style={styles.sidesListSimple}>
-              {suggestedSides.map((side) => (
-                <Text key={side.name} style={styles.simpleSideItem}>
-                  • {side.name}
-                </Text>
-              ))}
-            </View>
-          </View>
-        )}
       </View>
     </Pressable>
   );
@@ -897,118 +877,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2C3E50',
     lineHeight: 22,
-  },
-  sidesListSimple: {
-    gap: 6,
-    marginTop: 6,
-  },
-  simpleSideItem: {
-    fontSize: 14,
-    color: '#0B6B64',
-    lineHeight: 20,
-  },
-  sidesColumn: {
-    gap: 16,
-  },
-  sideCard: {
-    borderWidth: 1,
-    borderColor: '#D8F5F1',
-    backgroundColor: '#F5FFFD',
-    borderRadius: 14,
-    padding: 12,
-    gap: 10,
-  },
-  sideCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-  },
-  sideName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#085F56',
-    flex: 1,
-  },
-  sideBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  scorePill: {
-    backgroundColor: '#0B6B64',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  scorePillText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 12,
-    letterSpacing: 0.4,
-  },
-  metaPill: {
-    backgroundColor: '#E4F7F5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#B7E8E3',
-  },
-  metaPinned: {
-    backgroundColor: '#FFF3E8',
-    borderColor: '#FFE0BF',
-  },
-  metaPillText: {
-    color: '#0B6B64',
-    fontWeight: '700',
-    fontSize: 11,
-    letterSpacing: 0.4,
-  },
-  sideWhy: {
-    fontSize: 13,
-    color: '#2C3E50',
-    lineHeight: 18,
-  },
-  sideMetaRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  sideMetaLabel: {
-    fontSize: 12,
-    color: '#0B6B64',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  sideMetaValue: {
-    fontSize: 12,
-    color: '#0B6B64',
-  },
-  sideProfileRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  profileChip: {
-    backgroundColor: '#EFFFFD',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#BDEFE7',
-  },
-  profileChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0B6B64',
-  },
-  sideIngredients: {
-    marginTop: 4,
-    gap: 4,
-  },
-  sideIngredientText: {
-    fontSize: 12,
-    color: '#285E5A',
   },
 });

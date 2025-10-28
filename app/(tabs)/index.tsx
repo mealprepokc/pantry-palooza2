@@ -143,52 +143,6 @@ const normalizeTitleKey = (value: string | null | undefined): string =>
 export default function HomeScreen() {
   const { user } = useAuth();
   const { track } = useAnalytics();
-  const defaultSideSuggestions: DishSideSuggestion[] = [
-    {
-      name: 'Mixed Greens Salad',
-      why_it_works: 'Provides a fresh, crisp counterpoint to the main dish.',
-      estimated_ingredients: ['mixed greens', 'olive oil', 'lemon', 'salt', 'pepper'],
-      prep_style: 'cold',
-      profile: ['fresh', 'light'],
-      feasibility_rate: 0.8,
-      meal_type_fit: 0.7,
-      semantic_fit: 0.7,
-      dishSideScore: 0.75,
-    },
-    {
-      name: 'Garlic Bread',
-      why_it_works: 'Adds a warm, savory side that pairs with most hearty mains.',
-      estimated_ingredients: ['bread', 'garlic', 'butter', 'parsley'],
-      prep_style: 'hot',
-      profile: ['comfort', 'savory'],
-      feasibility_rate: 0.75,
-      meal_type_fit: 0.8,
-      semantic_fit: 0.65,
-      dishSideScore: 0.72,
-    },
-    {
-      name: 'Roasted Vegetables',
-      why_it_works: 'Adds color and balanced nutrition with minimal prep.',
-      estimated_ingredients: ['carrots', 'broccoli', 'olive oil', 'seasoning'],
-      prep_style: 'hot',
-      profile: ['healthy', 'savory'],
-      feasibility_rate: 0.78,
-      meal_type_fit: 0.82,
-      semantic_fit: 0.7,
-      dishSideScore: 0.76,
-    },
-    {
-      name: 'Herbed Rice',
-      why_it_works: 'Adds a hearty, fragrant side that soaks up sauces.',
-      estimated_ingredients: ['rice', 'butter', 'parsley', 'garlic'],
-      prep_style: 'hot',
-      profile: ['comfort', 'savory'],
-      feasibility_rate: 0.7,
-      meal_type_fit: 0.75,
-      semantic_fit: 0.68,
-      dishSideScore: 0.7,
-    },
-  ];
   // Library-backed selections
   const [seasonings, setSeasonings] = useState<string[]>([]);
   const [produce, setProduce] = useState<string[]>([]);
@@ -606,7 +560,7 @@ export default function HomeScreen() {
           >
             <Text style={styles.dishesTitle}>Your Personalized Dishes</Text>
             {generatedDishes.map((dish, index) => (
-              <DishScorecard key={index} dish={dish} servings={servings} suggestedSides={defaultSideSuggestions} />
+              <DishScorecard key={index} dish={dish} servings={servings} />
             ))}
           </View>
         )}
