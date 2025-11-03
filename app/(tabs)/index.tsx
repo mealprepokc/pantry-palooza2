@@ -158,6 +158,7 @@ export default function HomeScreen() {
   const cacheRef = useRef<Map<string, GeneratedDish[]>>(new Map());
   const lastRequestKeyRef = useRef<string | null>(null);
   const recentTitlesRef = useRef<Map<string, Set<string>>>(new Map());
+  const refreshCountRef = useRef<Map<string, number>>(new Map());
   const qs = useLocalSearchParams();
   const seededFromQueryRef = useRef(false);
   // Generate controls
@@ -334,6 +335,25 @@ export default function HomeScreen() {
       recentTitles: previousTitles,
     };
 
+    const refreshCountMap = refreshCountRef.current;
+    const currentCount = refreshCountMap.get(cacheKey) ?? 0;
+    if (!shouldForceRefresh) {
+      refreshCountMap.set(cacheKey, 0);
+    } else {
+      if (currentCount >= 4) {
+        const limitMessage = 'Refresh limit reached. Add more pantry items or adjust meal type to see new dishes.';
+        setError(limitMessage);
+        void track('generate_failure', {
+          reason: 'refresh_limit',
+          mealType,
+          servings,
+          strict: strictMode,
+        });
+        return;
+      }
+      refreshCountMap.set(cacheKey, currentCount + 1);
+    }
+
     if (cached && !shouldForceRefresh) {
       setError('');
       setGeneratedDishes(cloneDishes(cached));
@@ -418,10 +438,10 @@ export default function HomeScreen() {
       );
 
       const adjusted = applyMealTypeHeuristics(filtered, mealType);
-      const finalDishes = cloneDishes(adjusted);
+      const prioritized = cloneDishes(adjusted);
       const titleSet = recentTitlesRef.current.get(cacheKey) ?? new Set<string>();
       const seenKeys = new Set(Array.from(titleSet));
-      const filteredFresh = finalDishes.filter((dish) => {
+      const filteredFresh = prioritized.filter((dish) => {
         const key = normalizeTitleKey(dish.title);
         if (!key) return true;
         if (seenKeys.has(key)) return false;
@@ -430,21 +450,37 @@ export default function HomeScreen() {
       });
 
       // If filtering removed too many dishes (e.g., duplicates), fall back to original list.
-      const usableDishes = filteredFresh.length >= Math.min(3, finalDishes.length) ? filteredFresh : finalDishes;
+      const baseDishes = filteredFresh.length >= Math.min(3, prioritized.length) ? filteredFresh : prioritized;
+      const limitedDishes = baseDishes.slice(0, 7);
 
       const titlesForTracking = recentTitlesRef.current.get(cacheKey) ?? new Set<string>();
-      usableDishes.forEach((dish) => {
+      limitedDishes.forEach((dish) => {
         const key = normalizeTitleKey(dish.title);
         if (key) titlesForTracking.add(key);
       });
       recentTitlesRef.current.set(cacheKey, titlesForTracking);
+      const combineWithExisting = (current: GeneratedDish[]): GeneratedDish[] => {
+        if (!shouldForceRefresh || current.length === 0) {
+          return limitedDishes;
+        }
+        const seen = new Set(limitedDishes.map((dish) => normalizeTitleKey(dish.title)));
+        const preserved = current.filter((dish) => {
+          const key = normalizeTitleKey(dish.title);
+          if (!key) return false;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        return [...limitedDishes, ...preserved].slice(0, 7);
+      };
 
-      cacheRef.current.set(cacheKey, usableDishes);
-      setGeneratedDishes(usableDishes);
+      const nextDishes = combineWithExisting(generatedDishes);
+      cacheRef.current.set(cacheKey, cloneDishes(nextDishes));
+      setGeneratedDishes(nextDishes);
       void track('generate_result', {
         source: 'network',
-        dishCount: usableDishes.length,
-        filteredOut: finalDishes.length - usableDishes.length,
+        dishCount: nextDishes.length,
+        filteredOut: Math.max(0, prioritized.length - limitedDishes.length),
         mealType,
         servings,
         strict: strictMode,
