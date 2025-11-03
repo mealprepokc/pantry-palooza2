@@ -62,19 +62,27 @@ const SECTIONS = [
     ],
   },
   {
-    title: '9. International Users',
+    title: '9. Request Account or Data Deletion',
+    body: [
+      'You can request the deletion of your Pantry Palooza account and associated data at any time.',
+      'Submit your request at https://pantrypalooza.app/support or email pantrypalooza45@gmail.com using the same address tied to your account.',
+      'We will acknowledge your request and remove eligible data within 30 days unless we are legally required to retain certain records.',
+    ],
+  },
+  {
+    title: '10. International Users',
     body: [
       'Your information may be processed in the United States or other countries where our service providers operate. By using Pantry Palooza, you consent to these transfers.',
     ],
   },
   {
-    title: '10. Changes to this Policy',
+    title: '11. Changes to this Policy',
     body: [
       'We may update this Privacy Policy. If changes are significant, we will notify you through the app or by email. Continued use of Pantry Palooza after updates constitutes acceptance.',
     ],
   },
   {
-    title: '11. Contact Us',
+    title: '12. Contact Us',
     body: [
       'Pantry Palooza',
       'Email: pantrypalooza45@gmail.com',
