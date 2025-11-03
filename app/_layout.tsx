@@ -22,6 +22,7 @@ export default function RootLayout() {
             <Stack.Screen name="logo-preview" />
             <Stack.Screen name="policy" />
             <Stack.Screen name="support" />
+            <Stack.Screen name="deletion" />
             <Stack.Screen name="+not-found" />
           </Stack>
           <StatusBar style="auto" />

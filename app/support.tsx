@@ -20,6 +20,12 @@ const SUPPORT_LINKS = [
     onPress: () => router.push('/policy'),
   },
   {
+    title: 'Request Account Deletion',
+    description: 'Submit a verified request to remove your account and personal data.',
+    actionLabel: 'Open Deletion Page',
+    onPress: () => router.push('/deletion' as any),
+  },
+  {
     title: 'Report a Bug',
     description: 'Let us know if something isn\'t working as expected.',
     actionLabel: 'Email Support',
