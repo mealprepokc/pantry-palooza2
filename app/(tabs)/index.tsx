@@ -340,7 +340,7 @@ export default function HomeScreen() {
     if (!shouldForceRefresh) {
       refreshCountMap.set(cacheKey, 0);
     } else {
-      if (currentCount >= 4) {
+      if (currentCount >= 3) {
         const limitMessage = 'Refresh limit reached. Add more pantry items or adjust meal type to see new dishes.';
         setError(limitMessage);
         void track('generate_failure', {
@@ -451,7 +451,7 @@ export default function HomeScreen() {
 
       // If filtering removed too many dishes (e.g., duplicates), fall back to original list.
       const baseDishes = filteredFresh.length >= Math.min(3, prioritized.length) ? filteredFresh : prioritized;
-      const limitedDishes = baseDishes.slice(0, 7);
+      const limitedDishes = baseDishes.slice(0, 5);
 
       const titlesForTracking = recentTitlesRef.current.get(cacheKey) ?? new Set<string>();
       limitedDishes.forEach((dish) => {
@@ -471,7 +471,7 @@ export default function HomeScreen() {
           seen.add(key);
           return true;
         });
-        return [...limitedDishes, ...preserved].slice(0, 7);
+        return [...limitedDishes, ...preserved].slice(0, 5);
       };
 
       const nextDishes = combineWithExisting(generatedDishes);
