@@ -129,6 +129,7 @@ export default function LibraryScreen() {
   const [loading, setLoading] = useState(true);
   const [unsaved, setUnsaved] = useState(false);
   const [compactHeader, setCompactHeader] = useState(false);
+  const [hasScrolled, setHasScrolled] = useState(false);
   const hasShownOnboardingRef = useRef(false);
 
   const totalSelected = useMemo(
@@ -229,8 +230,11 @@ export default function LibraryScreen() {
       const offsetY = event.nativeEvent.contentOffset.y;
       const shouldCompact = offsetY > 60;
       setCompactHeader((prev) => (prev !== shouldCompact ? shouldCompact : prev));
+      if (!hasScrolled && offsetY > 4) {
+        setHasScrolled(true);
+      }
     },
-    []
+    [hasScrolled]
   );
 
   const toggleItem = useCallback((section: MasterSection, item: string) => {
@@ -343,28 +347,30 @@ export default function LibraryScreen() {
           )}
         </View>
 
-        <View style={[styles.summaryCard, compactHeader && styles.summaryCardCompact]}>
-          <View>
-            <Text style={styles.summaryTitle}>{totalSelected} items saved</Text>
-            {!compactHeader && (
-              <Text style={styles.summaryDescription}>
-                Ready for {readyMeals.length ? readyMeals.join(', ') : 'no meals yet'}. Add at least one item per
-                category to unlock better suggestions.
+        {hasScrolled && (
+          <View style={[styles.summaryCard, compactHeader && styles.summaryCardCompact]}>
+            <View>
+              <Text style={styles.summaryTitle}>{totalSelected} items saved</Text>
+              {!compactHeader && (
+                <Text style={styles.summaryDescription}>
+                  Ready for {readyMeals.length ? readyMeals.join(', ') : 'no meals yet'}. Add at least one item per
+                  category to unlock better suggestions.
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              style={[styles.statusBadge, statusStyle]}
+              activeOpacity={0.8}
+              onPress={() => {
+                if (!canSave) showSaveToast();
+              }}
+            >
+              <Text style={styles.statusBadgeText} numberOfLines={1} ellipsizeMode="tail">
+                {statusLabel}
               </Text>
-            )}
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.statusBadge, statusStyle]}
-            activeOpacity={0.8}
-            onPress={() => {
-              if (!canSave) showSaveToast();
-            }}
-          >
-            <Text style={styles.statusBadgeText} numberOfLines={1} ellipsizeMode="tail">
-              {statusLabel}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        )}
 
         {loading ? (
           <View style={styles.loaderContainer}>
@@ -496,14 +502,16 @@ export default function LibraryScreen() {
           </ScrollView>
         )}
 
-        <TouchableOpacity
-          style={[styles.primaryButton, (!canSave || saving) && styles.primaryButtonDisabled]}
-          disabled={saving || !canSave}
-          onPress={handleSave}
-          activeOpacity={canSave ? 0.85 : 1}
-        >
-          <Text style={styles.primaryButtonText}>{saving ? 'Saving…' : 'Save Library'}</Text>
-        </TouchableOpacity>
+        {hasScrolled && (
+          <TouchableOpacity
+            style={[styles.primaryButton, (!canSave || saving) && styles.primaryButtonDisabled]}
+            disabled={saving || !canSave}
+            onPress={handleSave}
+            activeOpacity={canSave ? 0.85 : 1}
+          >
+            <Text style={styles.primaryButtonText}>{saving ? 'Saving…' : 'Save Library'}</Text>
+          </TouchableOpacity>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
