@@ -522,7 +522,7 @@ const uniqueSorted = (items: string[]) => Array.from(new Set(items)).sort((a, b)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0B0F',
+    backgroundColor: '#F7F9FB',
   },
   keyboardAvoider: {
     flex: 1,
@@ -539,7 +539,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#2C3E50',
     marginBottom: 8,
   },
   headerTitleCompact: {
@@ -549,18 +549,23 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 15,
     lineHeight: 20,
-    color: '#A6A6B2',
+    color: '#5A6C7D',
   },
   summaryCard: {
     marginHorizontal: 24,
     padding: 16,
     borderRadius: 16,
-    backgroundColor: '#14141B',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#1F1F2A',
+    borderColor: '#E1E8ED',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    shadowColor: '#0000000d',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 2,
   },
   summaryCardCompact: {
     paddingVertical: 12,
@@ -568,12 +573,12 @@ const styles = StyleSheet.create({
   summaryTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#2C3E50',
     marginBottom: 4,
   },
   summaryDescription: {
     fontSize: 14,
-    color: '#88889B',
+    color: '#5A6C7D',
     maxWidth: '80%',
   },
   statusBadge: {
@@ -589,17 +594,17 @@ const styles = StyleSheet.create({
   statusBadgeText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#07070A',
+    color: '#1B2A34',
     textAlign: 'center',
   },
   statusPending: {
-    backgroundColor: '#FFC857',
+    backgroundColor: '#FFE8B5',
   },
   statusReady: {
-    backgroundColor: '#4ADE80',
+    backgroundColor: '#D9F5EF',
   },
   statusNeutral: {
-    backgroundColor: '#3F3F52',
+    backgroundColor: '#E8EEF5',
   },
   loaderContainer: {
     flex: 1,
@@ -614,12 +619,17 @@ const styles = StyleSheet.create({
     paddingBottom: 96,
   },
   sectionCard: {
-    backgroundColor: '#13131C',
+    backgroundColor: '#FFFFFF',
     borderRadius: 18,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1F1F2A',
+    borderColor: '#E1E8ED',
+    shadowColor: '#0000000d',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 1,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -630,16 +640,16 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#2C3E50',
   },
   sectionMeta: {
     fontSize: 13,
-    color: '#828297',
+    color: '#5A6C7D',
     marginTop: 4,
   },
   sectionCollapse: {
     fontSize: 24,
-    color: '#5F5FA3',
+    color: '#4ECDC4',
     paddingHorizontal: 4,
   },
   subSectionHeader: {
@@ -649,7 +659,7 @@ const styles = StyleSheet.create({
   subSectionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#9A9AC2',
+    color: '#7A8A99',
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
@@ -663,22 +673,22 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#2A2A3C',
-    backgroundColor: '#181824',
+    borderColor: '#E1E8ED',
+    backgroundColor: '#FFFFFF',
   },
   chipGhost: {
     backgroundColor: 'transparent',
   },
   chipActive: {
-    borderColor: '#6366F1',
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    borderColor: '#4ECDC4',
+    backgroundColor: 'rgba(78, 205, 196, 0.16)',
   },
   chipText: {
-    color: '#D6D6E7',
+    color: '#2C3E50',
     fontSize: 14,
   },
   chipTextActive: {
-    color: '#FFFFFF',
+    color: '#0F2F33',
     fontWeight: '600',
   },
   customGrid: {
@@ -693,14 +703,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#2A2A3C',
+    backgroundColor: '#E8EEF5',
   },
   customChipText: {
-    color: '#F8F8FF',
+    color: '#2C3E50',
     marginRight: 6,
   },
   customChipRemove: {
-    color: '#FF8181',
+    color: '#E74C3C',
     fontWeight: '700',
   },
   addRow: {
@@ -711,18 +721,18 @@ const styles = StyleSheet.create({
   addInput: {
     flex: 1,
     minHeight: 48,
-    backgroundColor: '#161623',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: '#FFFFFF',
+    color: '#2C3E50',
     borderWidth: 1,
-    borderColor: '#1F1F2A',
+    borderColor: '#E1E8ED',
     fontSize: 15,
   },
   addButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#6366F1',
+    backgroundColor: '#4ECDC4',
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: 12,
@@ -735,13 +745,13 @@ const styles = StyleSheet.create({
     margin: 24,
     marginTop: 12,
     borderRadius: 16,
-    backgroundColor: '#6366F1',
+    backgroundColor: '#4ECDC4',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 18,
   },
   primaryButtonDisabled: {
-    backgroundColor: '#3D3D57',
+    backgroundColor: '#BDEBE4',
   },
   primaryButtonText: {
     color: '#FFFFFF',

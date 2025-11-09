@@ -203,6 +203,33 @@ Respond with JSON only.`;
       return { allowed: true, reason: null };
     };
 
+    let dislikedTitleSet = new Set<string>();
+    if (userId) {
+      const { data: dislikedRows, error: dislikedError } = await supabaseAdmin
+        .from('disliked_dishes')
+        .select('title_key, title')
+        .eq('user_id', userId);
+
+      if (dislikedError) {
+        console.warn('Failed to load disliked dishes', dislikedError);
+      } else if (Array.isArray(dislikedRows)) {
+        dislikedTitleSet = new Set(
+          dislikedRows
+            .map((row) => row.title_key || normalizeTitleKey(row.title))
+            .filter((key): key is string => Boolean(key))
+        );
+      }
+    }
+
+    const filterDisliked = <T extends { title?: string }>(dishes: T[]): T[] => {
+      if (!dislikedTitleSet.size) return dishes;
+      return dishes.filter((dish) => {
+        const key = normalizeTitleKey(dish.title ?? '');
+        if (!key) return true;
+        return !dislikedTitleSet.has(key);
+      });
+    };
+
     if (!forceRefresh) {
       const { data: cached, error: cacheError } = await supabaseAdmin
         .from('generated_dish_cache')
@@ -216,12 +243,15 @@ Respond with JSON only.`;
       }
 
       if (cached?.payload && cached.expires_at && new Date(cached.expires_at).getTime() > Date.now()) {
-        return new Response(
-          JSON.stringify({ dishes: cached.payload, source: 'cache' }),
-          {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
+        const filteredPayload = filterDisliked((cached.payload ?? []) as { title?: string }[]);
+        if (filteredPayload.length >= 3) {
+          return new Response(
+            JSON.stringify({ dishes: filteredPayload.slice(0, 5), source: 'cache' }),
+            {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            }
+          );
+        }
       }
     }
 
@@ -491,7 +521,9 @@ Respond with JSON only.`;
       dedupedByTitle.push(dish);
     });
 
-    const filteredByRecency = dedupedByTitle.filter((dish) => {
+    const filteredByDislike = filterDisliked(dedupedByTitle);
+
+    const filteredByRecency = filteredByDislike.filter((dish) => {
       const key = normalizeTitleKey(dish.title);
       if (!key) return true;
       return !recentTitleSet.has(key);

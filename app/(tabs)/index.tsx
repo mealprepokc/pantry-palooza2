@@ -21,6 +21,14 @@ import { useAnalytics } from '@/contexts/AnalyticsContext';
 
 type MealType = 'Breakfast' | 'Lunch' | 'Dinner';
 
+type GenerateTriggerReason = 'manual' | 'dislike';
+
+interface GenerateOptions {
+  forceRefresh?: boolean;
+  skipRefreshCount?: boolean;
+  reason?: GenerateTriggerReason;
+}
+
 const AGGREGATE = (dish: GeneratedDish) => {
   const parts: string[] = [];
   if (dish.title) parts.push(dish.title);
@@ -288,7 +296,13 @@ export default function HomeScreen() {
 
   // UI is filter-only now; no inline ingredient toggles.
 
-  const generateDishes = async () => {
+  const generateDishes = async (options: GenerateOptions = {}) => {
+    const {
+      forceRefresh: forceRefreshOverride,
+      skipRefreshCount = false,
+      reason = 'manual',
+    } = options;
+
     if (!libraryAny) {
       setError('Your Library is empty. Add items in Library first.');
       void track('generate_failure', {
@@ -323,6 +337,9 @@ export default function HomeScreen() {
     const cached = cacheRef.current.get(cacheKey);
     const recentTitlesSet = recentTitlesRef.current.get(cacheKey);
     let shouldForceRefresh = Boolean(cached && previousKey === cacheKey);
+    if (typeof forceRefreshOverride === 'boolean') {
+      shouldForceRefresh = forceRefreshOverride;
+    }
     if (!shouldForceRefresh && !cached && !recentTitlesSet) {
       // initialize tracking for new key
       recentTitlesRef.current.set(cacheKey, new Set());
@@ -335,11 +352,12 @@ export default function HomeScreen() {
       recentTitles: previousTitles,
     };
 
+    const effectiveSkipRefreshCount = skipRefreshCount || reason === 'dislike';
     const refreshCountMap = refreshCountRef.current;
     const currentCount = refreshCountMap.get(cacheKey) ?? 0;
     if (!shouldForceRefresh) {
       refreshCountMap.set(cacheKey, 0);
-    } else {
+    } else if (!effectiveSkipRefreshCount) {
       if (currentCount >= 3) {
         const limitMessage = 'Refresh limit reached. Add more pantry items or adjust meal type to see new dishes.';
         setError(limitMessage);
@@ -348,6 +366,7 @@ export default function HomeScreen() {
           mealType,
           servings,
           strict: strictMode,
+          triggerReason: reason,
         });
         return;
       }
@@ -363,13 +382,17 @@ export default function HomeScreen() {
         mealType,
         servings,
         strict: strictMode,
+        triggerReason: reason,
       });
       return;
     }
 
     setLoading(true);
     setError('');
-    setGeneratedDishes([]);
+    const shouldClearExisting = reason !== 'dislike';
+    if (shouldClearExisting) {
+      setGeneratedDishes([]);
+    }
 
     try {
       void track('generate_request', {
@@ -383,6 +406,7 @@ export default function HomeScreen() {
         mealType,
         servings,
         strict: strictMode,
+        triggerReason: reason,
       });
       const { data, error } = await supabase.functions.invoke('generate-dishes', {
         body: { ...requestBody, forceRefresh: shouldForceRefresh },
@@ -485,6 +509,7 @@ export default function HomeScreen() {
         servings,
         strict: strictMode,
         forceRefresh: shouldForceRefresh,
+        triggerReason: reason,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to generate dishes. Please try again.';
@@ -497,10 +522,31 @@ export default function HomeScreen() {
         servings,
         strict: strictMode,
         forceRefresh: shouldForceRefresh,
+        triggerReason: reason,
       });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDishDislike = (dish: GeneratedDish) => {
+    const key = normalizeTitleKey(dish.title);
+    if (!key) return;
+
+    setGeneratedDishes((current) => current.filter((item) => normalizeTitleKey(item.title) !== key));
+
+    cacheRef.current.forEach((value, cacheKey) => {
+      const filtered = value.filter((item) => normalizeTitleKey(item.title) !== key);
+      cacheRef.current.set(cacheKey, filtered);
+    });
+
+    recentTitlesRef.current.forEach((set) => set.add(key));
+
+    void generateDishes({
+      forceRefresh: true,
+      skipRefreshCount: true,
+      reason: 'dislike',
+    });
   };
 
   const hasLibrary = libraryAny;
@@ -562,7 +608,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={[styles.generateButton, !hasLibrary && styles.generateButtonDisabled]}
-          onPress={generateDishes}
+          onPress={() => void generateDishes()}
           disabled={loading || !hasLibrary}
         >
           {loading ? (
@@ -596,7 +642,13 @@ export default function HomeScreen() {
           >
             <Text style={styles.dishesTitle}>Your Personalized Dishes</Text>
             {generatedDishes.map((dish, index) => (
-              <DishScorecard key={index} dish={dish} servings={servings} />
+              <DishScorecard
+                key={`${normalizeTitleKey(dish.title) || index}`}
+                dish={dish}
+                servings={servings}
+                mealType={mealType}
+                onDislike={handleDishDislike}
+              />
             ))}
           </View>
         )}

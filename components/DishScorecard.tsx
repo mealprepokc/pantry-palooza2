@@ -10,7 +10,7 @@ import {
   Platform,
   ToastAndroid,
 } from 'react-native';
-import { BookmarkPlus, BookmarkCheck, Clock, ChefHat } from 'lucide-react-native';
+import { BookmarkPlus, BookmarkCheck, Clock, ChefHat, ThumbsDown } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { GeneratedDish } from '@/types/database';
@@ -77,7 +77,7 @@ function parseQuantity(value: string): number | null {
 }
 
 function normalizeIngredientName(value: string): string {
-  const withoutBullet = value.replace(/^[•\-*\s]+/, '').trim();
+  const withoutBullet = value.replace(/^[•\-\*\s]+/, '').trim();
   const withoutQty = withoutBullet
     .replace(
       /^[\d\s\/.,-]+(cups?|cup|tablespoons?|tbsp|teaspoons?|tsp|oz|ounce|ounces?|grams?|g|ml|milliliters?|l|liters?|lbs?|pounds?|kg|kilograms?|pinch|cloves?)?\.?\s*/i,
@@ -86,6 +86,12 @@ function normalizeIngredientName(value: string): string {
     .trim();
   return withoutQty;
 }
+
+const normalizeTitleKey = (value: string | null | undefined): string =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
 
 function parseIngredientLine(raw: any): ParsedIngredient {
   const original = stringifyIngredient(raw).trim();
@@ -196,9 +202,10 @@ interface DishScorecardProps {
   dish: GeneratedDish;
   servings?: number;
   mealType?: MealType;
+  onDislike?: (dish: GeneratedDish) => void;
 }
 
-export function DishScorecard({ dish, servings = 2, mealType }: DishScorecardProps) {
+export function DishScorecard({ dish, servings = 2, mealType, onDislike }: DishScorecardProps) {
   const { user } = useAuth();
   const { track } = useAnalytics();
   const [saved, setSaved] = useState(false);
@@ -206,6 +213,10 @@ export function DishScorecard({ dish, servings = 2, mealType }: DishScorecardPro
   const [cooking, setCooking] = useState(false);
   const [cookedState, setCookedState] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const [disliked, setDisliked] = useState(false);
+  const [disliking, setDisliking] = useState(false);
+
+  const titleKey = useMemo(() => normalizeTitleKey(String(dish.title ?? '')), [dish.title]);
 
   useEffect(() => {
     let isMounted = true;
@@ -214,6 +225,7 @@ export function DishScorecard({ dish, servings = 2, mealType }: DishScorecardPro
     if (!user || !title) {
       setSaved(false);
       setCookedState(false);
+      setDisliked(false);
       return () => {
         isMounted = false;
       };
@@ -221,7 +233,11 @@ export function DishScorecard({ dish, servings = 2, mealType }: DishScorecardPro
 
     (async () => {
       try {
-        const [{ data: savedRow, error: savedError }, { data: cookedRow, error: cookedError }] = await Promise.all([
+        const [
+          { data: savedRow, error: savedError },
+          { data: cookedRow, error: cookedError },
+          { data: dislikedRow, error: dislikedError },
+        ] = await Promise.all([
           supabase
             .from('saved_dishes')
             .select('id')
@@ -234,6 +250,12 @@ export function DishScorecard({ dish, servings = 2, mealType }: DishScorecardPro
             .eq('user_id', user.id)
             .eq('title', title)
             .maybeSingle(),
+          supabase
+            .from('disliked_dishes')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('title_key', titleKey)
+            .maybeSingle(),
         ]);
 
         if (!isMounted) return;
@@ -244,9 +266,13 @@ export function DishScorecard({ dish, servings = 2, mealType }: DishScorecardPro
         if (cookedError && cookedError.code !== 'PGRST116') {
           console.warn('Failed to fetch cooked status', cookedError);
         }
+        if (dislikedError && dislikedError.code !== 'PGRST116') {
+          console.warn('Failed to fetch disliked status', dislikedError);
+        }
 
         setSaved(Boolean(savedRow));
         setCookedState(Boolean(cookedRow));
+        setDisliked(Boolean(dislikedRow));
       } catch (error) {
         console.warn('Failed to hydrate dish states', error);
       }
@@ -255,7 +281,7 @@ export function DishScorecard({ dish, servings = 2, mealType }: DishScorecardPro
     return () => {
       isMounted = false;
     };
-  }, [user?.id, dish.title]);
+  }, [user?.id, dish.title, titleKey]);
 
   const parsedIngredients = useMemo<ParsedIngredient[]>(() => {
     const source = Array.isArray(dish.ingredients) ? dish.ingredients : [];
@@ -397,6 +423,59 @@ export function DishScorecard({ dish, servings = 2, mealType }: DishScorecardPro
     if (!restaurantCostEstimate) return null;
     return Math.max(0, restaurantCostEstimate - costEstimate);
   }, [restaurantCostEstimate, costEstimate, providedCookCost, providedOrderCost]);
+
+  const handleDislike = async () => {
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to dislike dishes.');
+      return;
+    }
+
+    if (!titleKey) {
+      Alert.alert('Unavailable', 'Unable to dislike this dish right now.');
+      return;
+    }
+
+    try {
+      setDisliking(true);
+      const payload = {
+        user_id: user.id,
+        title: String(dish.title ?? '').trim(),
+        title_key: titleKey,
+        dish: {
+          title: dish.title,
+          cuisine_type: dish.cuisine_type,
+          cooking_time: dish.cooking_time,
+          ingredients: dish.ingredients,
+          instructions: instructionsForStorage,
+          calories_per_serving: dish.caloriesPerServing ?? dish.calories ?? null,
+          servings: dish.servings ?? null,
+        },
+      };
+
+      const { error } = await supabase
+        .from('disliked_dishes')
+        .upsert(payload, { onConflict: 'user_id,title_key' });
+
+      if (error && error.code !== '23505') {
+        throw error;
+      }
+
+      setDisliked(true);
+      void track('dislike_dish', {
+        title: dish.title,
+        mealType,
+      });
+
+      if (Platform.OS === 'android') ToastAndroid.show('We will swap in something new.', ToastAndroid.SHORT);
+      else Alert.alert('Noted', 'We will avoid this dish going forward.');
+
+      onDislike?.(dish);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to record dislike.');
+    } finally {
+      setDisliking(false);
+    }
+  };
 
   const handleCooked = async () => {
     if (!user) {
@@ -573,6 +652,28 @@ export function DishScorecard({ dish, servings = 2, mealType }: DishScorecardPro
                   <BookmarkPlus size={24} color="#4ECDC4" />
                 )}
                 <Text style={[styles.actionLabel, saved && styles.actionLabelActive]}>{saved ? 'Saved' : 'Save'}</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleDislike}
+              disabled={disliking || disliked}
+              style={[styles.actionBtn, styles.dislikeBtn, (disliked || disliking) && styles.dislikeBtnActive]}
+            >
+              <View style={styles.actionBtnInner}>
+                {disliking ? (
+                  <ActivityIndicator size="small" color={disliked ? '#FFFFFF' : '#FF6B6B'} />
+                ) : (
+                  <ThumbsDown size={22} color={disliked ? '#FFFFFF' : '#FF6B6B'} />
+                )}
+                <Text
+                  style={[
+                    styles.actionLabel,
+                    styles.dislikeLabel,
+                    disliked && styles.dislikeLabelActive,
+                  ]}
+                >
+                  {disliked ? 'Disliked' : 'Dislike'}
+                </Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -816,6 +917,14 @@ const styles = StyleSheet.create({
     borderColor: '#4ECDC4',
     backgroundColor: '#F2FFFD',
   },
+  dislikeBtn: {
+    borderColor: '#FF6B6B',
+    backgroundColor: '#FFF5F5',
+  },
+  dislikeBtnActive: {
+    backgroundColor: '#FF6B6B',
+    borderColor: '#FF6B6B',
+  },
   viewCookedBtn: {
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -840,6 +949,12 @@ const styles = StyleSheet.create({
   },
   actionLabelActive: {
     color: '#0B6B64',
+  },
+  dislikeLabel: {
+    color: '#FF6B6B',
+  },
+  dislikeLabelActive: {
+    color: '#FFFFFF',
   },
   section: {
     marginBottom: 20,

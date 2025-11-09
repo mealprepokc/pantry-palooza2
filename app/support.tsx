@@ -27,7 +27,7 @@ const SUPPORT_LINKS = [
   },
   {
     title: 'Report a Bug',
-    description: 'Let us know if something isn\'t working as expected.',
+    description: 'Let us know if something isn\u2019t working as expected.',
     actionLabel: 'Email Support',
     onPress: () => Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${SUPPORT_SUBJECT}`),
   },
@@ -43,7 +43,7 @@ export default function SupportScreen() {
 
         <View style={styles.header}>
           <Text style={styles.title}>Support</Text>
-          <Text style={styles.subtitle}>We\'re here to help you make the most of Pantry Palooza.</Text>
+          <Text style={styles.subtitle}>We\u2019re here to help you make the most of Pantry Palooza.</Text>
         </View>
 
         <View style={styles.card}>
