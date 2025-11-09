@@ -99,6 +99,71 @@ Deno.serve(async (req: Request) => {
         .toLowerCase()
         .replace(/\s+/g, ' ');
 
+    const canonicalizeToken = (token: string): string => {
+      if (token.endsWith('ies') && token.length > 4) {
+        return token.slice(0, -3) + 'y';
+      }
+      if (token.endsWith('es') && token.length > 4) {
+        return token.slice(0, -2);
+      }
+      if (token.endsWith('s') && token.length > 3) {
+        return token.slice(0, -1);
+      }
+      return token;
+    };
+
+    const normalizeIngredientName = (value: unknown): string | null => {
+      if (value == null) return null;
+      const raw = String(value).toLowerCase();
+      const withoutBullet = raw.replace(/^[•\-*\s]+/, '').trim();
+      const withoutParen = withoutBullet.replace(/\([^)]*\)/g, ' ');
+      const withoutQty = withoutParen.replace(
+        /^[\d\s\/,.-]+(cups?|tablespoons?|tbsp|teaspoons?|tsp|oz|ounces?|grams?|g|ml|milliliters?|l|liters?|lbs?|pounds?|kg|kilograms?|pinch|cloves?|can|cans|package|packages|slice|slices|stick|sticks)?\.?\s*/,
+        ''
+      );
+      const cleaned = withoutQty
+        .replace(
+          /\b(?:cups?|tablespoons?|tbsp|teaspoons?|tsp|oz|ounces?|grams?|g|ml|milliliters?|l|liters?|lbs?|pounds?|kg|kilograms?|pinch|cloves?|can|cans|package|packages|slice|slices|stick|sticks|pint|pints|quart|quarts|gallon|gallons)\b/g,
+          ' '
+        )
+        .replace(
+          /\b(?:fresh|dried|ground|chopped|diced|minced|sliced|shredded|grated|crushed|optional|divided|large|small|medium|boneless|skinless|ripe|extra|virgin|plus|more|to taste|finely|roughly|room\s*temperature|softened|melted)\b/g,
+          ' '
+        )
+        .replace(/\b(?:and|or|with|of|the|a|to|for|in|on|at|into|from|plus)\b/g, ' ')
+        .replace(/[^a-z\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return cleaned || null;
+    };
+
+    const STOP_TOKENS = new Set(['salt', 'pepper', 'water']);
+
+    const collectIngredientKeywords = (value: unknown): { phrases: string[]; tokens: string[] } => {
+      const normalized = normalizeIngredientName(value);
+      if (!normalized) return { phrases: [], tokens: [] };
+
+      const phrases: string[] = normalized.length >= 3 ? [normalized] : [];
+      const words = normalized.split(' ').filter(Boolean);
+      const tokens: string[] = [];
+      words.forEach((word) => {
+        if (word.length < 4) return;
+        const canonical = canonicalizeToken(word);
+        if (STOP_TOKENS.has(canonical)) return;
+        tokens.push(word);
+        if (canonical !== word) tokens.push(canonical);
+      });
+
+      if (words.length > 1) {
+        const canonicalPhrase = words.map((word) => canonicalizeToken(word)).join(' ').trim();
+        if (canonicalPhrase && canonicalPhrase !== normalized) {
+          phrases.push(canonicalPhrase);
+        }
+      }
+
+      return { phrases, tokens };
+    };
+
     const normalizedSeasonings = normalizeArray(seasonings);
     const normalizedVegetables = normalizeArray(vegetables);
     const normalizedEntrees = normalizeArray(entrees);
@@ -204,10 +269,12 @@ Respond with JSON only.`;
     };
 
     let dislikedTitleSet = new Set<string>();
+    let dislikedIngredientPhrases = new Set<string>();
+    let dislikedIngredientTokens = new Set<string>();
     if (userId) {
       const { data: dislikedRows, error: dislikedError } = await supabaseAdmin
         .from('disliked_dishes')
-        .select('title_key, title')
+        .select('title_key, title, dish')
         .eq('user_id', userId);
 
       if (dislikedError) {
@@ -218,15 +285,69 @@ Respond with JSON only.`;
             .map((row) => row.title_key || normalizeTitleKey(row.title))
             .filter((key): key is string => Boolean(key))
         );
+        dislikedRows.forEach((row) => {
+          const rawDish = row.dish;
+          let dishData: any = rawDish;
+          if (typeof rawDish === 'string') {
+            try {
+              dishData = JSON.parse(rawDish);
+            } catch {
+              dishData = null;
+            }
+          }
+
+          const ingredients = Array.isArray(dishData?.ingredients) ? dishData.ingredients : [];
+          ingredients.forEach((item: unknown) => {
+            const { phrases, tokens } = collectIngredientKeywords(item);
+            phrases.forEach((phrase) => {
+              if (phrase.length) dislikedIngredientPhrases.add(phrase);
+            });
+            tokens.forEach((token) => {
+              if (token.length) dislikedIngredientTokens.add(token);
+            });
+          });
+        });
       }
     }
 
-    const filterDisliked = <T extends { title?: string }>(dishes: T[]): T[] => {
-      if (!dislikedTitleSet.size) return dishes;
+    const hasIngredientFilters = dislikedIngredientPhrases.size > 0 || dislikedIngredientTokens.size > 0;
+
+    const filterDisliked = <T extends { title?: string; ingredients?: unknown }>(dishes: T[]): T[] => {
+      if (!dislikedTitleSet.size && !hasIngredientFilters) return dishes;
       return dishes.filter((dish) => {
         const key = normalizeTitleKey(dish.title ?? '');
         if (!key) return true;
-        return !dislikedTitleSet.has(key);
+        if (dislikedTitleSet.has(key)) {
+          return false;
+        }
+
+        if (hasIngredientFilters && Array.isArray((dish as any).ingredients)) {
+          const ingredients = (dish as any).ingredients as unknown[];
+          for (const ingredient of ingredients) {
+            const normalized = normalizeIngredientName(ingredient);
+            if (!normalized) continue;
+
+            for (const phrase of dislikedIngredientPhrases) {
+              if (!phrase) continue;
+              if (normalized.includes(phrase)) {
+                return false;
+              }
+              if (phrase.length >= 4 && phrase.includes(normalized) && normalized.length >= 3) {
+                return false;
+              }
+            }
+
+            const words = normalized.split(' ').filter(Boolean);
+            for (const word of words) {
+              const canonical = canonicalizeToken(word);
+              if (dislikedIngredientTokens.has(word) || dislikedIngredientTokens.has(canonical)) {
+                return false;
+              }
+            }
+          }
+        }
+
+        return true;
       });
     };
 
