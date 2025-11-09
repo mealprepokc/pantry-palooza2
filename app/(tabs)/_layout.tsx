@@ -5,12 +5,18 @@ import OpenBook from '@/assets/icons/OpenBook';
 import AccountIcon from '@/assets/icons/Account';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlerts } from '@/contexts/AlertContext';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const { user, loading } = useAuth();
   const { shoppingDelta, cookedDelta, pendingShopping, pendingCooked } = useAlerts();
   const accountBadgeCount = (pendingShopping ? shoppingDelta : 0) + (pendingCooked ? cookedDelta : 0);
+  const insets = useSafeAreaInsets();
+
+  const androidExtraPadding = Platform.OS === 'android' ? 16 : 0;
+  const tabBarPaddingBottom = 12 + insets.bottom + androidExtraPadding;
+  const tabBarHeight = 72 + (tabBarPaddingBottom - 12);
 
   if (loading) {
     return (
@@ -37,14 +43,13 @@ export default function TabLayout() {
         tabBarItemStyle: {
           paddingVertical: 6,
         },
-        tabBarStyle: {
-          backgroundColor: "#FFF",
-          borderTopWidth: 1,
-          borderTopColor: '#E0E0E0',
-          paddingTop: 10,
-          paddingBottom: 12,
-          height: 72,
-        },
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            paddingBottom: tabBarPaddingBottom,
+            height: tabBarHeight,
+          },
+        ],
       }}>
       <Tabs.Screen
         name="library"
@@ -98,7 +103,13 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  tabBar: {
     backgroundColor: '#FFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+    paddingTop: 10,
   },
   iconWrap: {
     padding: 6,
