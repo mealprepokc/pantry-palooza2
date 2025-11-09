@@ -164,12 +164,59 @@ Deno.serve(async (req: Request) => {
       return { phrases, tokens };
     };
 
+    const STRICT_BASE_ITEMS = ['salt', 'pepper', 'oil', 'olive oil', 'water'];
+    const STRICT_NEUTRAL_TOKENS = new Set([
+      'seasoning',
+      'seasonings',
+      'mix',
+      'mixes',
+      'powder',
+      'powders',
+      'blend',
+      'blends',
+      'sauce',
+      'sauces',
+      'rub',
+      'rubs',
+      'spice',
+      'spices',
+      'dressing',
+      'dressings',
+      'paste',
+      'pastes',
+      'stock',
+      'broth',
+      'base',
+    ]);
+
+    const strictAllowedPhrases = new Set<string>();
+    const strictAllowedTokens = new Set<string>();
+
+    const registerAllowedItem = (value: string, allowTokens: boolean) => {
+      const { phrases, tokens } = collectIngredientKeywords(value);
+      phrases.forEach((phrase) => {
+        if (phrase.length) strictAllowedPhrases.add(phrase);
+      });
+      if (allowTokens) {
+        tokens.forEach((token) => {
+          if (token.length) strictAllowedTokens.add(token);
+        });
+      }
+    };
+
     const normalizedSeasonings = normalizeArray(seasonings);
     const normalizedVegetables = normalizeArray(vegetables);
     const normalizedEntrees = normalizeArray(entrees);
     const normalizedPastas = normalizeArray(pastas);
     const normalizedEquipment = normalizeArray(equipment);
     const normalizedRecentTitles = normalizeArray(recentTitles);
+
+    if (mode === 'strict') {
+      STRICT_BASE_ITEMS.forEach((item) => registerAllowedItem(item, false));
+      [...normalizedSeasonings, ...normalizedVegetables, ...normalizedEntrees, ...normalizedPastas].forEach((entry) => {
+        registerAllowedItem(entry, true);
+      });
+    }
 
     const requestFingerprint = {
       seasonings: normalizedSeasonings,
@@ -199,7 +246,7 @@ Deno.serve(async (req: Request) => {
     const equipmentList = normalizedEquipment.join(', ');
 
     const strictnessNote = mode === 'strict'
-      ? 'STRICT mode: Only use listed ingredients plus basic pantry staples (salt, pepper, oil, water).'
+      ? 'STRICT mode: Only use the provided ingredient list plus basic pantry staples (salt, pepper, oil, water). No extra proteins, produce, or seasonings.'
       : 'LOOSE mode: Prefer listed ingredients; minor sensible additions allowed.';
 
     const timeNote = maxTimeMinutes && Number(maxTimeMinutes) > 0
@@ -343,6 +390,44 @@ Respond with JSON only.`;
               if (dislikedIngredientTokens.has(word) || dislikedIngredientTokens.has(canonical)) {
                 return false;
               }
+            }
+          }
+        }
+
+        if (mode === 'strict' && Array.isArray((dish as any).ingredients)) {
+          const ingredients = (dish as any).ingredients as unknown[];
+          for (const ingredient of ingredients) {
+            const normalized = normalizeIngredientName(ingredient);
+            if (!normalized) continue;
+
+            const normalizedTokens = normalized.split(' ').filter(Boolean);
+            let allowed = false;
+
+            for (const phrase of strictAllowedPhrases) {
+              if (!phrase) continue;
+              if (normalized.includes(phrase) || phrase.includes(normalized)) {
+                allowed = true;
+                break;
+              }
+            }
+
+            if (!allowed) {
+              for (const token of normalizedTokens) {
+                if (token.length < 3) continue;
+                const canonical = canonicalizeToken(token);
+                if (STRICT_NEUTRAL_TOKENS.has(canonical)) {
+                  allowed = true;
+                  break;
+                }
+                if (strictAllowedTokens.has(token) || strictAllowedTokens.has(canonical)) {
+                  allowed = true;
+                  break;
+                }
+              }
+            }
+
+            if (!allowed) {
+              return false;
             }
           }
         }
