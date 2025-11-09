@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   SafeAreaView,
-  Platform,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,7 +15,6 @@ import { isIngredientAllowed, type DietaryPrefs } from '@/lib/dietary';
 import { useAuth } from '@/contexts/AuthContext';
 import { GeneratedDish, GenerateDishesFunctionResponse } from '@/types/database';
 import { DishScorecard } from '@/components/DishScorecard';
-import type { DishSideSuggestion } from '@/types/generated';
 import { useAnalytics } from '@/contexts/AnalyticsContext';
 
 type MealType = 'Breakfast' | 'Lunch' | 'Dinner';
