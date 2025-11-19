@@ -328,6 +328,10 @@ export default function AccountScreen() {
           <Text style={styles.secondaryText}>FAQ</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity style={styles.secondary} onPress={() => router.push('/privacy-policy' as any)}>
+          <Text style={styles.secondaryText}>Privacy Policy</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={[styles.secondary, styles.logout]} onPress={signOut}>
           <Text style={[styles.secondaryText, styles.logoutText]}>Log Out</Text>
         </TouchableOpacity>
