@@ -1,0 +1,74 @@
+Pantry Palooza – iOS App Store Submission Checklist
+===============================================
+
+Core App Identifiers
+--------------------
+- App Name: Pantry Palooza
+- Bundle Identifier: com.pantry.palooza
+- Bundle Prefix: com.pantry
+- Apple ID / Team: (use your Apple Developer Program account)
+- Support Email: support@pantrypalooza.com
+- Privacy Policy URL: https://pantrypalooza-web.vercel.app/privacy-policy (publish docs/privacy-policy.md here)
+
+Certificates & Provisioning
+---------------------------
+1. Create an App Store distribution certificate on developer.apple.com > Certificates.
+2. Generate a production provisioning profile for bundle ID com.pantry.palooza.
+3. Download the certificate (.cer) and provisioning profile (.mobileprovision) for future builds.
+
+App Store Connect Metadata
+--------------------------
+- Subtitle (30 char max): e.g., "AI-powered pantry planner"
+- Description: Outline pantry tracking, AI dish generation, dislike filters, shopping lists.
+- Promotional text (optional): e.g., "Plan meals faster with AI-tailored recipes."
+- Keywords: pantry, meal planning, recipes, AI cooking, grocery list
+- Primary Category: Food & Drink (recommended)
+- Secondary Category: Lifestyle (optional)
+- Support URL: https://pantrypalooza-web.vercel.app/support
+- Marketing URL: https://pantrypalooza-web.vercel.app/
+- Age Rating Questionnaire: complete in App Store Connect.
+
+App Privacy Responses
+---------------------
+Match answers to privacy policy:
+- Data collected: Email, authentication tokens, pantry items, dislikes, analytics event data.
+- Data use: App functionality, analytics, support.
+- No tracking, no advertising networks, no sale of data.
+- Children: Not directed to under 13.
+
+Compliance Forms
+----------------
+- Export compliance: answers "No" (no custom encryption beyond HTTPS).
+- Content rights: confirm you own / have rights to all content.
+- Advertising identifier: select "No" (app does not use IDFA).
+
+Visual Assets
+-------------
+- App icon: 1024 × 1024 PNG (transparent layers removed).
+- Screenshots:
+  • 6.7" display (iPhone 15 Pro Max) – 3–10 images.
+  • 6.1" display (iPhone 15/14) – 3–10 images.
+  • Optional 5.5" display (iPhone 8 Plus) for legacy layout.
+- Optional App Preview video (up to 30 seconds, 1080 × 1920, H.264).
+
+Build & Submission
+------------------
+1. Ensure versioning: update app.json with new version/build (e.g., 1.0.1 / build 2).
+2. Generate IPA:
+   npx eas build --platform ios --profile production
+3. After build completes, submit using:
+   npx eas submit --platform ios --profile production
+   (or upload .ipa via Transporter).
+4. Add TestFlight testers (internal/external) and gather feedback.
+
+Review Notes
+------------
+- Provide demo credentials if login required (email/password).
+- Mention AI-generated recipes are informational only; verify cooking temps.
+- Highlight data deletion pathway: Account tab ➜ Delete my data (or email support@pantrypalooza.com).
+
+Post-Submission
+---------------
+- Monitor App Store Connect > My Apps > Activity for review status.
+- Address reviewer feedback promptly.
+- Once approved, choose manual or automatic release.
